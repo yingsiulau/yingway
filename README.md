@@ -3,11 +3,14 @@
 Einseitige Web-App zur Verwaltung von Ein- und Ausgängen im Sammelkarten-Handel
 (Wareneingang, Warenausgang, laufende Kosten, Lager & Marge).
 
-- **Kein Server, kein Backend.** Reine statische Seite, lauffähig auf GitHub Pages.
-- **Daten bleiben im Browser.** Alle Einträge werden AES-256-GCM-verschlüsselt in
+- **Statische Seite**, lauffähig auf GitHub Pages – ohne Backend nutzbar.
+- **Daten bleiben verschlüsselt.** Alle Einträge werden AES-256-GCM-verschlüsselt in
   `localStorage` gespeichert und beim Öffnen mit deiner Passphrase entschlüsselt.
-- **Die Echtdaten im Repo sind verschlüsselt** (`seed.enc.js`). Ohne Passphrase
-  ist daraus nichts lesbar. Die Passphrase wird nirgends gespeichert oder übertragen.
+- **Optionaler Geräte-Sync** über einen kleinen Cloudflare Worker (Ende-zu-Ende
+  verschlüsselt): mehrere Personen sehen denselben Stand, ganz ohne Account –
+  nur Adresse + gemeinsame Passphrase. Einrichtung: **[SETUP-SYNC.md](SETUP-SYNC.md)**.
+- **Die Echtdaten im Repo sind verschlüsselt** (`seed.enc.js`, Platzhalter bis du
+  ihn füllst). Ohne Passphrase ist daraus nichts lesbar.
 
 > ⚠️ Das ist Passwortschutz, **kein echtes 2FA**. Auf statischem Hosting gibt es
 > keinen Server, der einen zweiten Faktor prüfen könnte. Die Sicherheit hängt an
@@ -16,8 +19,13 @@ Einseitige Web-App zur Verwaltung von Ein- und Ausgängen im Sammelkarten-Handel
 
 ## Live
 
-GitHub Pages: `https://<user>.github.io/yingway/`
-(Settings → Pages → Source: **GitHub Actions**)
+https://yingsiulau.github.io/yingway/ (Settings → Pages → Source: **GitHub Actions**)
+
+## Geräteübergreifend nutzen
+
+Standardmässig liegen die Daten pro Browser. Für einen gemeinsamen Stand über
+mehrere Geräte / Personen: **[SETUP-SYNC.md](SETUP-SYNC.md)** (Cloudflare Worker,
+Gratis, ~10 Min). Danach genügt anderen Personen die Adresse + die Passphrase.
 
 ## Eigene Daten einspielen
 

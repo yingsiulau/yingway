@@ -265,6 +265,19 @@ img{max-width:100%}
   display:inline-flex;align-items:center;gap:5px}
 .lockbtn:hover{border-color:var(--gold-soft)}
 .lockbtn svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.8}
+.syncpill{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--line);
+  color:var(--muted);background:var(--surface-2);white-space:nowrap}
+.syncpill.ok{color:var(--pos);border-color:var(--pos)}
+.syncpill.offline,.syncpill.forbidden{color:var(--neg);border-color:var(--neg)}
+.syncpill.conflict{color:#fff;background:var(--neg);border-color:var(--neg)}
+:root[data-theme="dark"] .syncpill.conflict{color:#1a1206}
+.side-foot{flex-wrap:wrap}
+.conflict-bar{background:var(--neg);color:#fff;padding:10px 16px;font-size:12.5px;
+  display:flex;align-items:center;gap:12px;justify-content:center;flex-wrap:wrap}
+:root[data-theme="dark"] .conflict-bar{color:#1a1206}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .conflict-bar{color:#1a1206}}
+.conflict-bar button{border:1px solid currentColor;background:transparent;color:inherit;
+  border-radius:6px;padding:4px 12px;font-weight:600;font-size:12px}
 </style>
 
 <div id="app">
@@ -278,6 +291,7 @@ img{max-width:100%}
     </div>
     <nav id="nav"></nav>
     <div class="side-foot">
+      <span class="syncpill" id="syncBadge" hidden></span>
       <button class="lockbtn" id="lockNow" title="Sperren">
         <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="1.5"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>Sperren</button>
       <button class="iconbtn" id="themeBtn2" title="Hell / Dunkel">
@@ -285,7 +299,13 @@ img{max-width:100%}
       </button>
     </div>
   </aside>
-  <main><div class="wrap" id="view"></div></main>
+  <main>
+    <div class="conflict-bar" id="conflict" hidden>
+      Diese Buchhaltung wurde auf einem anderen Gerät geändert. Deine letzte Änderung wurde nicht übernommen.
+      <button id="reloadNow">Neu laden</button>
+    </div>
+    <div class="wrap" id="view"></div>
+  </main>
 </div>
 
 <div id="lock">
@@ -298,7 +318,7 @@ img{max-width:100%}
       <div class="err" id="lockErr"></div>
       <button class="btn" type="submit" id="lockBtn">Entsperren</button>
     </form>
-    <div class="hint" id="lockHint">Die Daten liegen verschlüsselt (AES-GCM) im Seite-Bundle und werden nur hier im Browser entschlüsselt. Die Passphrase wird nirgends gespeichert oder übertragen.</div>
+    <div class="hint" id="lockHint">Die Daten sind AES-256-GCM-verschlüsselt und werden nur hier im Browser entschlüsselt. Die Passphrase wird nirgends gespeichert oder übertragen – ohne sie gibt es keine Wiederherstellung.</div>
   </div>
 </div>
 
@@ -312,6 +332,7 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
+<script src="sync.config.js"></script>
 <script src="seed.enc.js"></script>
 <script>
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
@@ -333,11 +354,14 @@ let route='overview';
 let period='all';
 
 const VKEY='yingway.vault.v1';
+const RKEY='yingway.rev.v1';
+const SYNC=(typeof window.__SYNC_URL__==='string'?window.__SYNC_URL__:'').trim();
 const store={wareneingang:[],warenausgang:[],laufende_kosten:[]};
 let ready={wareneingang:false,warenausgang:false,laufende_kosten:false};
-let session=null;         // {key:CryptoKey, salt:Uint8Array}
-let saveTimer=null;
+let session=null;         // {key:CryptoKey, salt:Uint8Array, pass:string}
+let saveTimer=null, pushTimer=null;
 let lastSaved='';
+let syncTok=null, syncRev=0, syncState=SYNC?'idle':'off', syncBusy=false;
 
 /* ---------- crypto (Web Crypto, gleich in Browser & Node) ---------- */
 const enc=new TextEncoder(), dec=new TextDecoder();
@@ -345,6 +369,10 @@ const b64e=buf=>{ const u=new Uint8Array(buf); let s=''; const C=0x8000;
   for(let i=0;i<u.length;i+=C) s+=String.fromCharCode.apply(null,u.subarray(i,i+C));
   return btoa(s); };
 const b64d=str=>Uint8Array.from(atob(str),c=>c.charCodeAt(0));
+async function sha256hex(s){
+  const buf=await crypto.subtle.digest('SHA-256',enc.encode(s));
+  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
 async function deriveKey(pass,salt){
   const base=await crypto.subtle.importKey('raw',enc.encode(pass),'PBKDF2',false,['deriveKey']);
   return crypto.subtle.deriveKey(
@@ -381,40 +409,119 @@ async function decryptJSON(blobB64,pass){
 /* ---------- unlock / persistence ---------- */
 function lsGet(k){ try{return localStorage.getItem(k)}catch(e){return null} }
 function lsSet(k,v){ try{localStorage.setItem(k,v)}catch(e){toast('Speicher nicht verfügbar');} }
-
-async function unlock(pass){
-  const vault=lsGet(VKEY);
-  if(vault){
-    const {data,key,salt}=await decryptJSON(vault,pass);
-    return apply(data,key,salt);
-  }
-  if(typeof window.__SEED__==='string' && window.__SEED__){
-    const {data,key}=await decryptJSON(window.__SEED__,pass);
-    const salt=crypto.getRandomValues(new Uint8Array(16));      // eigener Vault-Salt
-    const nkey=await deriveKey(pass,salt);
-    session={key:nkey,salt};
-    apply(data,nkey,salt,true);
-    await persistNow();
-    return true;
-  }
-  throw new Error('no-vault');   // Erststart ohne Seed -> setup()
-}
-function apply(data,key,salt,skipSession){
+function snapshot(){ return {wareneingang:store.wareneingang,warenausgang:store.warenausgang,
+  laufende_kosten:store.laufende_kosten,_saved:new Date().toISOString()}; }
+function loadInto(data){
   store.wareneingang=Array.isArray(data.wareneingang)?data.wareneingang:[];
   store.warenausgang=Array.isArray(data.warenausgang)?data.warenausgang:[];
   store.laufende_kosten=Array.isArray(data.laufende_kosten)?data.laufende_kosten:[];
-  if(!skipSession)session={key,salt};
   ready={wareneingang:true,warenausgang:true,laufende_kosten:true};
-  return true;
 }
+
+/* Zentrale Anmeldung: probiert lokalen Tresor -> Cloud -> Seed -> Neuanlage.
+   Wirft 'wrong' bei falscher Passphrase, 'short' bei zu kurzer Neu-Passphrase. */
+async function attemptEnter(pass){
+  const localVault=lsGet(VKEY);
+  if(localVault){
+    let d; try{ d=await decryptJSON(localVault,pass); }catch(e){ throw new Error('wrong'); }
+    const salt=crypto.getRandomValues(new Uint8Array(16));
+    const key=await deriveKey(pass,salt);
+    loadInto(d.data); session={key,salt,pass};
+    syncRev=+(lsGet(RKEY)||0);
+    await persistNow();
+    await syncPull(true);
+    return;
+  }
+  if(SYNC){
+    const tok=await sha256hex('yingway|'+pass);
+    let j=null;
+    try{
+      const r=await fetch(SYNC,{headers:{Authorization:'Bearer '+tok},cache:'no-store'});
+      if(r.status===403) throw new Error('wrong');
+      if(!r.ok) throw new Error('net');
+      j=await r.json();
+    }catch(e){ if(e.message==='wrong') throw e; syncState='offline'; }
+    syncTok=tok;
+    if(j && j.blob){
+      let d; try{ d=await decryptJSON(j.blob,pass); }catch(e){ throw new Error('wrong'); }
+      const salt=crypto.getRandomValues(new Uint8Array(16));
+      const key=await deriveKey(pass,salt);
+      loadInto(d.data); session={key,salt,pass};
+      syncRev=j.rev; syncState='ok'; lsSet(RKEY,String(j.rev));
+      await persistNow();
+      return;
+    }
+  }
+  if(typeof window.__SEED__==='string' && window.__SEED__){
+    let d; try{ d=await decryptJSON(window.__SEED__,pass); }catch(e){ throw new Error('wrong'); }
+    const salt=crypto.getRandomValues(new Uint8Array(16));
+    const key=await deriveKey(pass,salt);
+    loadInto(d.data); session={key,salt,pass};
+    await persistNow();
+    if(SYNC){ syncTok=syncTok||await sha256hex('yingway|'+pass); syncRev=0; await syncPush(true); }
+    return;
+  }
+  if(pass.length<10) throw new Error('short');
+  const salt=crypto.getRandomValues(new Uint8Array(16));
+  const key=await deriveKey(pass,salt);
+  loadInto({wareneingang:[],warenausgang:[],laufende_kosten:[]}); session={key,salt,pass};
+  await persistNow();
+  if(SYNC){ syncTok=syncTok||await sha256hex('yingway|'+pass); syncRev=0; await syncPush(true); }
+}
+
 async function persistNow(){
   if(!session)return;
-  const payload={wareneingang:store.wareneingang,warenausgang:store.warenausgang,
-    laufende_kosten:store.laufende_kosten,_saved:new Date().toISOString()};
-  lsSet(VKEY,await encryptJSON(payload,session.key,session.salt));
+  lsSet(VKEY,await encryptJSON(snapshot(),session.key,session.salt));
   lastSaved=new Date().toLocaleString('de-CH');
 }
-function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(persistNow,150); }
+function persist(){
+  clearTimeout(saveTimer); saveTimer=setTimeout(persistNow,150);
+  if(SYNC && session){ clearTimeout(pushTimer); pushTimer=setTimeout(()=>syncPush(),1200); }
+}
+
+/* ---------- Cloud-Sync ---------- */
+function setSync(s){ syncState=s; updateSyncUI(); }
+async function syncPull(quiet){
+  if(!SYNC || !session) return;
+  if(!syncTok) syncTok=await sha256hex('yingway|'+session.pass);
+  if(!quiet) setSync('sync');
+  try{
+    const r=await fetch(SYNC,{headers:{Authorization:'Bearer '+syncTok},cache:'no-store'});
+    if(r.status===403){ setSync('forbidden'); return; }
+    if(!r.ok) throw 0;
+    const j=await r.json();
+    if(j.blob && j.rev>syncRev){
+      const {data}=await decryptJSON(j.blob,session.pass);
+      loadInto(data); syncRev=j.rev; lsSet(RKEY,String(j.rev));
+      await persistNow(); setSync('ok');
+      if(!editing) draw();
+      return;
+    }
+    if(!j.blob && syncRev===0){ await syncPush(true); return; }
+    if(j.rev<syncRev){ await syncPush(true); return; }
+    setSync('ok');
+  }catch(e){ setSync('offline'); }
+}
+async function syncPush(force){
+  if(!SYNC || !session) return;
+  if(!syncTok) syncTok=await sha256hex('yingway|'+session.pass);
+  if(syncBusy && !force) return;
+  syncBusy=true; setSync('sync');
+  try{
+    const salt=crypto.getRandomValues(new Uint8Array(16));
+    const key=await deriveKey(session.pass,salt);
+    const blob=await encryptJSON(snapshot(),key,salt);
+    const r=await fetch(SYNC,{method:'PUT',headers:{'Content-Type':'application/json',Authorization:'Bearer '+syncTok},
+      body:JSON.stringify({blob,baseRev:syncRev})});
+    if(r.status===403){ setSync('forbidden'); return; }
+    if(r.status===409){
+      const j=await r.json(); syncRev=j.rev; setSync('conflict'); return;
+    }
+    if(!r.ok) throw 0;
+    const j=await r.json(); syncRev=j.rev; lsSet(RKEY,String(j.rev)); setSync('ok');
+  }catch(e){ setSync('offline'); }
+  finally{ syncBusy=false; }
+}
 
 function rows(L){ return (store[L]||[]).map(r=>({...r,_ym:YM(r.d)})); }
 async function saveRow(L,row){
@@ -614,7 +721,9 @@ function viewOverview(){
 
   <div class="card">
     <h2>Daten &amp; Sicherung</h2>
-    <div class="cap">Alle Einträge liegen verschlüsselt in diesem Browser (localStorage). Kein Sync zwischen Geräten – mach regelmässig ein Backup.</div>
+    <div class="cap">${SYNC
+      ? 'Änderungen werden Ende-zu-Ende-verschlüsselt mit der Cloud abgeglichen. Jedes Gerät mit derselben Adresse und Passphrase sieht denselben Stand. Backups trotzdem empfohlen.'
+      : 'Alle Einträge liegen verschlüsselt in diesem Browser (localStorage). Kein Abgleich zwischen Geräten – mach regelmässig ein Backup.'}</div>
     <div class="toolbar" style="margin:0">
       <button class="btn ghost sm" id="dBackup"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Verschlüsseltes Backup</button>
       <button class="btn ghost sm" id="dImport"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M5 21h14"/></svg>Backup einspielen</button>
@@ -1093,24 +1202,31 @@ function importData(){
     if(!confirm('Alle aktuellen Einträge auf diesem Gerät durch die Datei ersetzen?'))return;
     store.wareneingang=data.wareneingang||[]; store.warenausgang=data.warenausgang||[];
     store.laufende_kosten=data.laufende_kosten||[];
-    await persistNow(); toast('Daten importiert'); draw();
+    await persistNow(); toast('Daten importiert');
+    if(SYNC){ syncRev=0; await syncPush(true); }
+    draw();
   };
   inp.click();
 }
 async function changePass(){
   if(!session)return;
+  if(SYNC && !confirm('Passphrase bei aktivem Sync ändern? Der andere Nutzer muss die neue Passphrase danach ebenfalls eingeben, sonst sieht er die Daten nicht mehr.'))return;
   const p1=prompt('Neue Passphrase (mind. 10 Zeichen):');
   if(p1==null)return;
   if(p1.length<10){ toast('Zu kurz – mindestens 10 Zeichen'); return; }
   if(prompt('Neue Passphrase wiederholen:')!==p1){ toast('Passphrasen stimmen nicht überein'); return; }
   const salt=crypto.getRandomValues(new Uint8Array(16));
-  session={key:await deriveKey(p1,salt),salt};
+  session={key:await deriveKey(p1,salt),salt,pass:p1};
   await persistNow();
-  toast('Passphrase geändert – gilt für dieses Gerät');
+  if(SYNC){ syncTok=await sha256hex('yingway|'+p1); syncRev=0; await syncPush(true); }
+  toast('Passphrase geändert');
 }
 function resetDevice(){
-  if(!confirm('Verschlüsselte Kopie von diesem Gerät entfernen? Beim nächsten Öffnen werden die Daten wieder aus dem Bundle geladen (Passphrase nötig). Nicht gesicherte Änderungen gehen verloren.'))return;
-  try{ localStorage.removeItem(VKEY); }catch(e){}
+  const msg = SYNC
+    ? 'Lokale Kopie von diesem Gerät entfernen? Die Daten werden beim nächsten Öffnen wieder aus der Cloud geladen (Passphrase nötig).'
+    : 'Verschlüsselte Kopie von diesem Gerät entfernen? Beim nächsten Öffnen werden die Daten wieder aus dem Bundle geladen (Passphrase nötig). Nicht gesicherte Änderungen gehen verloren.';
+  if(!confirm(msg))return;
+  try{ localStorage.removeItem(VKEY); localStorage.removeItem(RKEY); }catch(e){}
   location.reload();
 }
 function allFiltered(L){
@@ -1135,43 +1251,57 @@ let toastT;
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show');
   clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),2400); }
 
+/* ---------- Sync-Status-Anzeige ---------- */
+function updateSyncUI(){
+  const b=$('#syncBadge'); const c=$('#conflict');
+  const map={ off:'', idle:'Sync …', sync:'Sync …', ok:'Sync ✓', offline:'Sync offline',
+    conflict:'Konflikt', forbidden:'Passphrase ≠ Cloud' };
+  if(b){ b.textContent=map[syncState]||''; b.hidden=!SYNC||syncState==='off';
+    b.className='syncpill '+syncState; }
+  if(c) c.hidden=(syncState!=='conflict');
+}
+
 /* ---------- init / lock screen ---------- */
-const setupMode = !lsGet(VKEY) && !(typeof window.__SEED__==='string' && window.__SEED__);
+const hasSeed = typeof window.__SEED__==='string' && !!window.__SEED__;
+const freshSetup = !lsGet(VKEY) && !hasSeed && !SYNC;
 
 function showApp(){
   $('#lock').hidden=true;
+  updateSyncUI();
   draw();
-}
-async function doSetup(p1,p2){
-  if(p1.length<10) throw new Error('Passphrase zu kurz (mindestens 10 Zeichen).');
-  if(p1!==p2) throw new Error('Die beiden Passphrasen stimmen nicht überein.');
-  const salt=crypto.getRandomValues(new Uint8Array(16));
-  session={key:await deriveKey(p1,salt),salt};
-  apply({wareneingang:[],warenausgang:[],laufende_kosten:[]},session.key,salt,true);
-  await persistNow();
+  if(SYNC){
+    setInterval(()=>{ if(document.visibilityState==='visible' && !editing) syncPull(true); }, 45000);
+    document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible' && !editing) syncPull(true); });
+    window.addEventListener('online',()=>syncPull(true));
+  }
 }
 
 (function initLock(){
   const msg=$('#lockMsg'), hint=$('#lockHint'), p2=$('#pass2'), btn=$('#lockBtn'), err=$('#lockErr');
-  if(setupMode){
-    msg.textContent='Neue Buchhaltung anlegen. Lege eine Passphrase fest – damit werden alle Daten auf diesem Gerät verschlüsselt.';
+  if(freshSetup){
+    msg.textContent='Neue Buchhaltung anlegen. Lege eine Passphrase fest – damit werden alle Daten verschlüsselt.';
     p2.hidden=false; btn.textContent='Anlegen';
-    hint.textContent='Ohne diese Passphrase kommst du nicht mehr an die Daten. Es gibt keine Wiederherstellung. Notiere sie sicher.';
+  } else if(SYNC && !lsGet(VKEY)){
+    msg.textContent='Passphrase eingeben.';
+    hint.textContent='Neues Gerät: dieselbe Passphrase wie auf dem ersten Gerät. Ganz neu: eine Passphrase mit mindestens 10 Zeichen festlegen – der andere Nutzer braucht sie dann ebenfalls.';
   }
   $('#lockForm').onsubmit=async e=>{
     e.preventDefault(); err.textContent=''; btn.disabled=true;
     const v1=$('#pass1').value, v2=p2.value;
     try{
-      if(setupMode){ await doSetup(v1,v2); }
-      else{ await unlock(v1); }
+      if(freshSetup && v1!==v2) throw new Error('nomatch');
+      await attemptEnter(v1);
       showApp();
     }catch(ex){
-      err.textContent = ex.message==='no-vault' ? 'Kein Datensatz gefunden.'
-        : (setupMode ? ex.message : 'Falsche Passphrase.');
+      err.textContent = ex.message==='wrong' ? 'Falsche Passphrase.'
+        : ex.message==='short' ? 'Neue Passphrase: mindestens 10 Zeichen.'
+        : ex.message==='nomatch' ? 'Die beiden Passphrasen stimmen nicht überein.'
+        : 'Fehler beim Öffnen. Verbindung prüfen.';
       btn.disabled=false; $('#pass1').select();
     }
   };
 })();
 
 $('#lockNow').onclick=()=>location.reload();
+$('#reloadNow') && ($('#reloadNow').onclick=()=>location.reload());
 </script>

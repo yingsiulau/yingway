@@ -1,0 +1,9 @@
+name = "yingway-sync"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+workers_dev = true
+
+# Wird von  wrangler kv namespace create DB  gefüllt:
+[[kv_namespaces]]
+binding = "DB"
+id = "HIER_KV_NAMESPACE_ID_EINTRAGEN"
