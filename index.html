@@ -109,6 +109,7 @@ main{padding:0;min-width:0}
 
 /* ---------- KPI ---------- */
 .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:14px}
+.kpis.kpis-4{grid-template-columns:repeat(4,1fr)}
 .kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;
   padding:14px 15px;display:flex;flex-direction:column;gap:7px;min-width:0}
 .kpi .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);
@@ -229,17 +230,27 @@ tfoot td{padding:10px 12px;font-weight:600;border-top:2px solid var(--line);
 .tag-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
 
 @media (max-width:900px){
-  #app{grid-template-columns:1fr}
-  #side{position:static;height:auto;flex-direction:column}
-  nav{flex-direction:row;overflow-x:auto;padding:8px;gap:4px}
-  .navlink{white-space:nowrap;padding:8px 12px}
-  .navlink .badge{display:none}
-  .side-foot{display:none}
-  .brand{display:flex;align-items:center;justify-content:space-between}
+  #app{display:block}
+  #side{position:sticky;top:0;z-index:30;height:auto;width:100%;min-width:0;
+    flex-direction:column;border-right:none;border-bottom:1px solid var(--line)}
+  #side>*{min-width:0;max-width:100%}
+  .brand{display:flex;align-items:center;justify-content:space-between;padding:12px 16px}
   .brand .sub{display:none}
-  .wrap{padding:20px 16px 60px}
-  .kpis{grid-template-columns:repeat(2,1fr)}
+  nav{flex-direction:row;overflow-x:auto;padding:8px;gap:4px;
+    -webkit-overflow-scrolling:touch;scrollbar-width:none}
+  nav::-webkit-scrollbar{display:none}
+  .navlink{white-space:nowrap;padding:8px 12px;flex:none}
+  .navlink .badge{display:none}
+  .side-foot{padding:8px 16px;border-top:1px solid var(--line-soft)}
+  main{min-width:0}
+  .wrap{padding:20px 14px 64px;max-width:100%}
+  .kpis,.kpis.kpis-4{grid-template-columns:repeat(2,1fr)}
+  .kpi .v{font-size:19px}
   .card-row{grid-template-columns:1fr}
+  .phead{gap:10px}
+  .phead h1{font-size:22px}
+  .toolbar{gap:7px}
+  input[type=search]{min-width:0;flex:1}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 
@@ -259,6 +270,10 @@ img{max-width:100%}
 #lock input{width:100%;padding:10px 12px}
 #lock .btn{justify-content:center;padding:10px}
 #lock .err{color:var(--neg);font-size:12px;min-height:16px;margin:2px 0 0}
+#lock .showpw{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);margin:-2px 0 2px}
+#lock .showpw input{width:auto}
+.linklike{background:none;border:none;color:var(--gold);font-size:11.5px;padding:8px 0 0;
+  text-decoration:underline;text-align:left}
 #lock .hint{font-size:11px;color:var(--faint);margin-top:14px;line-height:1.5}
 .lockbtn{margin-left:auto;border:1px solid var(--line);background:var(--surface-2);
   color:var(--ink-soft);border-radius:7px;padding:5px 9px;font-size:11.5px;
@@ -313,12 +328,17 @@ img{max-width:100%}
     <div class="k"><span class="dot"></span>Yingway</div>
     <p id="lockMsg">Passphrase eingeben, um die Buchhaltung zu entschlüsseln.</p>
     <form id="lockForm">
-      <input type="password" id="pass1" placeholder="Passphrase" autocomplete="current-password" autofocus>
-      <input type="password" id="pass2" placeholder="Passphrase wiederholen" autocomplete="new-password" hidden>
+      <input type="password" id="pass1" placeholder="Passphrase" autocomplete="off"
+        autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="go" autofocus>
+      <input type="password" id="pass2" placeholder="Passphrase wiederholen" autocomplete="off"
+        autocapitalize="none" autocorrect="off" spellcheck="false" hidden>
+      <label class="showpw"><input type="checkbox" id="showPw"> Passphrase anzeigen</label>
       <div class="err" id="lockErr"></div>
       <button class="btn" type="submit" id="lockBtn">Entsperren</button>
     </form>
     <div class="hint" id="lockHint">Die Daten sind AES-256-GCM-verschlüsselt und werden nur hier im Browser entschlüsselt. Die Passphrase wird nirgends gespeichert oder übertragen – ohne sie gibt es keine Wiederherstellung.</div>
+    <button class="linklike" id="lockReset" hidden>Lokale Kopie dieses Geräts löschen</button>
+    <div class="hint" id="buildTag" style="margin-top:10px;opacity:.5"></div>
   </div>
 </div>
 
@@ -332,9 +352,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js"></script>
-<script src="seed.enc.js"></script>
+<script src="sync.config.js?b=20260909c"></script>
+<script src="seed.enc.js?b=20260909c"></script>
 <script>
+const BUILD='2026-09-09c';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -487,7 +508,7 @@ async function syncPull(quiet){
   if(!quiet) setSync('sync');
   try{
     const r=await fetch(SYNC,{headers:{Authorization:'Bearer '+syncTok},cache:'no-store'});
-    if(r.status===403){ setSync('forbidden'); return; }
+    if(r.status===403){ setSync('forbidden'); passphraseMismatch(); return; }
     if(!r.ok) throw 0;
     const j=await r.json();
     if(j.blob && j.rev>syncRev){
@@ -513,7 +534,7 @@ async function syncPush(force){
     const blob=await encryptJSON(snapshot(),key,salt);
     const r=await fetch(SYNC,{method:'PUT',headers:{'Content-Type':'application/json',Authorization:'Bearer '+syncTok},
       body:JSON.stringify({blob,baseRev:syncRev})});
-    if(r.status===403){ setSync('forbidden'); return; }
+    if(r.status===403){ setSync('forbidden'); passphraseMismatch(); return; }
     if(r.status===409){
       const j=await r.json(); syncRev=j.rev; setSync('conflict'); return;
     }
@@ -942,7 +963,7 @@ function viewLager(){
     <div><h1>Lager</h1><p>Automatisch aus Ein- und Ausgängen berechnet · Ø Einkaufspreis pro Stück je SKU</p></div>
     <button class="btn ghost sm" id="exportBtn"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>CSV</button>
   </div>
-  <div class="kpis" style="grid-template-columns:repeat(4,1fr)">
+  <div class="kpis kpis-4">
     <div class="kpi"><span class="lbl">Positionen</span><span class="v">${f.length}</span><span class="sub">${N0(T.buy-T.sell)} Stück am Lager</span></div>
     <div class="kpi lead"><span class="lbl">Warenwert (EK)</span><span class="v">${CHF(T.stockVal)}</span><span class="sub">gebundenes Kapital</span></div>
     <div class="kpi"><span class="lbl">Nettoeinnahmen</span><span class="v">${CHF(T.net)}</span><span class="sub">verkaufte Ware</span></div>
@@ -1276,14 +1297,40 @@ function showApp(){
   }
 }
 
+function wipeLocal(){ try{ localStorage.removeItem(VKEY); localStorage.removeItem(RKEY); }catch(e){} }
+function passphraseMismatch(){
+  const L=$('#lock'); if(!L) return;
+  L.hidden=false;
+  $('#lockMsg').textContent='Diese Passphrase passt nicht zu den synchronisierten Daten.';
+  $('#lockHint').textContent='Auf diesem Gerät liegt noch eine Kopie mit einer anderen Passphrase. Verwirf sie und melde dich mit der Passphrase des anderen Geräts an.';
+  $('#lockErr').textContent=''; $('#pass1').value=''; $('#pass2').hidden=true;
+  $('#showPw').checked=false; $('#pass1').type='password';
+  const btn=$('#lockBtn'); btn.textContent='Verwerfen & neu anmelden'; btn.disabled=false;
+  $('#lockReset').hidden=true;
+  $('#lockForm').onsubmit=e=>{ e.preventDefault(); wipeLocal(); location.reload(); };
+}
+
 (function initLock(){
   const msg=$('#lockMsg'), hint=$('#lockHint'), p2=$('#pass2'), btn=$('#lockBtn'), err=$('#lockErr');
+  const bt=$('#buildTag'); if(bt) bt.textContent='Stand '+BUILD+(SYNC?' · Sync aktiv':' · nur lokal');
+  const hasLocal=!!lsGet(VKEY);
   if(freshSetup){
     msg.textContent='Neue Buchhaltung anlegen. Lege eine Passphrase fest – damit werden alle Daten verschlüsselt.';
     p2.hidden=false; btn.textContent='Anlegen';
-  } else if(SYNC && !lsGet(VKEY)){
+  } else if(SYNC && !hasLocal){
     msg.textContent='Passphrase eingeben.';
     hint.textContent='Neues Gerät: dieselbe Passphrase wie auf dem ersten Gerät. Ganz neu: eine Passphrase mit mindestens 10 Zeichen festlegen – der andere Nutzer braucht sie dann ebenfalls.';
+  }
+  $('#showPw').onchange=e=>{ const t=e.target.checked?'text':'password'; $('#pass1').type=t; p2.type=t; };
+  const rst=$('#lockReset');
+  if(hasLocal){
+    rst.hidden=false;
+    rst.onclick=()=>{
+      const ok=confirm(SYNC
+        ? 'Lokale Kopie dieses Geräts löschen? Die Daten kommen beim nächsten Anmelden wieder aus der Cloud.'
+        : 'Lokale Kopie löschen? Ohne Backup sind die Daten auf diesem Gerät dann weg.');
+      if(ok){ wipeLocal(); location.reload(); }
+    };
   }
   $('#lockForm').onsubmit=async e=>{
     e.preventDefault(); err.textContent=''; btn.disabled=true;
@@ -1293,7 +1340,9 @@ function showApp(){
       await attemptEnter(v1);
       showApp();
     }catch(ex){
-      err.textContent = ex.message==='wrong' ? 'Falsche Passphrase.'
+      err.textContent = ex.message==='wrong' ? (hasLocal
+          ? 'Falsche Passphrase. Falls du auf diesem Gerät eine andere gesetzt hast: unten „Lokale Kopie … löschen".'
+          : 'Falsche Passphrase.')
         : ex.message==='short' ? 'Neue Passphrase: mindestens 10 Zeichen.'
         : ex.message==='nomatch' ? 'Die beiden Passphrasen stimmen nicht überein.'
         : 'Fehler beim Öffnen. Verbindung prüfen.';
