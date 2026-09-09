@@ -1,0 +1,7 @@
+# Klartext-Buchhaltung – darf NIE ins öffentliche Repo
+seed.plain.json
+*.plain.json
+*.vault
+
+.DS_Store
+node_modules/
