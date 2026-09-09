@@ -26,6 +26,7 @@ wrangler login                 # öffnet den Browser, einmal bestätigen
 
 # KV-Speicher anlegen – gibt eine id aus:
 wrangler kv namespace create DB
+# (ältere Wrangler-Versionen:  wrangler kv:namespace create DB )
 ```
 
 Die ausgegebene `id` in `worker/wrangler.toml` bei `HIER_KV_NAMESPACE_ID_EINTRAGEN`
