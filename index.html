@@ -352,10 +352,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20260909d"></script>
-<script src="seed.enc.js?b=20260909d"></script>
+<script src="sync.config.js?b=20260909e"></script>
+<script src="seed.enc.js?b=20260909e"></script>
 <script>
-const BUILD='2026-09-09d';
+const BUILD='2026-09-09e';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -746,7 +746,7 @@ function viewOverview(){
       ? 'Änderungen werden Ende-zu-Ende-verschlüsselt mit der Cloud abgeglichen. Jedes Gerät mit derselben Adresse und Passphrase sieht denselben Stand. Backups trotzdem empfohlen.'
       : 'Alle Einträge liegen verschlüsselt in diesem Browser (localStorage). Kein Abgleich zwischen Geräten – mach regelmässig ein Backup.'}</div>
     <div class="toolbar" style="margin:0">
-      ${(typeof window.__SEED__==='string'&&window.__SEED__)?`<button class="btn ghost sm" id="dBundle"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7"/></svg>Daten aus dem Bundle laden</button>`:''}
+      <button class="btn ghost sm" id="dBundle"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7"/></svg>Daten aus dem Bundle laden</button>
       ${SYNC?`<button class="btn ghost sm" id="dPull"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7"/></svg>Aus Cloud neu laden</button>`:''}
       <button class="btn ghost sm" id="dBackup"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Verschlüsseltes Backup</button>
       <button class="btn ghost sm" id="dImport"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M5 21h14"/></svg>Backup / Datei einspielen</button>
@@ -1235,8 +1235,14 @@ function importData(){
   inp.click();
 }
 async function loadFromBundle(){
-  const seed = (typeof window.__SEED__==='string' && window.__SEED__) ? window.__SEED__ : null;
-  if(!seed){ toast('Kein Bundle in dieser Version'); return; }
+  let seed = (typeof window.__SEED__==='string' && window.__SEED__) ? window.__SEED__ : null;
+  toast('Bundle wird geladen…');
+  try{
+    const r=await fetch('seed.enc.js?t='+Date.now(),{cache:'no-store'});
+    const m=(await r.text()).match(/window\.__SEED__\s*=\s*"([^"]+)"/);
+    if(m) seed=m[1];
+  }catch(e){}
+  if(!seed){ toast('Kein Bundle gefunden. Wurde seed.enc.js schon erzeugt und gepusht?'); return; }
   const pass = session?.pass || prompt('Passphrase, mit der das Bundle verschlüsselt wurde:');
   if(!pass) return;
   let data;
