@@ -6,4 +6,4 @@ workers_dev = true
 # Wird von  wrangler kv namespace create DB  gefüllt:
 [[kv_namespaces]]
 binding = "DB"
-id = "HIER_KV_NAMESPACE_ID_EINTRAGEN"
+id = "5fb396d04a8b429eb0f19f21b9d94b80"

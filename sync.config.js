@@ -7,4 +7,4 @@
  * Beispiel:
  *   window.__SYNC_URL__ = "https://yingway-sync.deinname.workers.dev/vault";
  */
-window.__SYNC_URL__ = "";
+window.__SYNC_URL__ = "https://yingway-sync.ying-tgc.workers.dev/vault";
