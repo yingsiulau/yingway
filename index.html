@@ -352,10 +352,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20260909c"></script>
-<script src="seed.enc.js?b=20260909c"></script>
+<script src="sync.config.js?b=20260909d"></script>
+<script src="seed.enc.js?b=20260909d"></script>
 <script>
-const BUILD='2026-09-09c';
+const BUILD='2026-09-09d';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -746,8 +746,10 @@ function viewOverview(){
       ? 'Änderungen werden Ende-zu-Ende-verschlüsselt mit der Cloud abgeglichen. Jedes Gerät mit derselben Adresse und Passphrase sieht denselben Stand. Backups trotzdem empfohlen.'
       : 'Alle Einträge liegen verschlüsselt in diesem Browser (localStorage). Kein Abgleich zwischen Geräten – mach regelmässig ein Backup.'}</div>
     <div class="toolbar" style="margin:0">
+      ${(typeof window.__SEED__==='string'&&window.__SEED__)?`<button class="btn ghost sm" id="dBundle"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7"/></svg>Daten aus dem Bundle laden</button>`:''}
+      ${SYNC?`<button class="btn ghost sm" id="dPull"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7"/></svg>Aus Cloud neu laden</button>`:''}
       <button class="btn ghost sm" id="dBackup"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Verschlüsseltes Backup</button>
-      <button class="btn ghost sm" id="dImport"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M5 21h14"/></svg>Backup einspielen</button>
+      <button class="btn ghost sm" id="dImport"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M5 21h14"/></svg>Backup / Datei einspielen</button>
       <button class="btn ghost sm" id="dJson">JSON-Export (offen)</button>
       <button class="btn ghost sm" id="dPass">Passphrase ändern</button>
       <div class="spacer"></div>
@@ -1022,6 +1024,9 @@ function wire(){
   const bind=(id,fn)=>{ const el=$('#'+id); if(el)el.onclick=fn; };
   bind('dBackup',exportVault); bind('dImport',importData); bind('dJson',exportJSON);
   bind('dPass',changePass); bind('dReset',resetDevice);
+  bind('dPull',async()=>{ toast('Lade aus der Cloud…'); syncRev=0; await syncPull(false);
+    if(syncState==='ok') toast('Aktueller Stand geladen'); draw(); });
+  bind('dBundle',loadFromBundle);
   const sv=$('#savedAt'); if(sv)sv.textContent = lastSaved ? 'Zuletzt auf diesem Gerät gespeichert: '+lastSaved : 'Noch nicht gespeichert.';
   $$('th[data-sk]').forEach(th=>th.onclick=()=>{
     const k=th.dataset.sk;
@@ -1206,7 +1211,7 @@ async function exportVault(){
   toast('Verschlüsseltes Backup heruntergeladen');
 }
 function importData(){
-  const inp=document.createElement('input'); inp.type='file'; inp.accept='.json,.vault,application/json,text/plain';
+  const inp=document.createElement('input'); inp.type='file';
   inp.onchange=async()=>{
     const file=inp.files[0]; if(!file)return;
     const text=(await file.text()).trim();
@@ -1228,6 +1233,29 @@ function importData(){
     draw();
   };
   inp.click();
+}
+async function loadFromBundle(){
+  const seed = (typeof window.__SEED__==='string' && window.__SEED__) ? window.__SEED__ : null;
+  if(!seed){ toast('Kein Bundle in dieser Version'); return; }
+  const pass = session?.pass || prompt('Passphrase, mit der das Bundle verschlüsselt wurde:');
+  if(!pass) return;
+  let data;
+  try{ data=(await decryptJSON(seed,pass)).data; }
+  catch(e){ toast('Diese Passphrase passt nicht zum Bundle'); return; }
+  const n=(data.wareneingang||[]).length+(data.warenausgang||[]).length+(data.laufende_kosten||[]).length;
+  if(!confirm(`Alle Einträge durch die ${n} Einträge aus dem Bundle ersetzen${SYNC?' – auch in der Cloud':''}?`)) return;
+  loadInto(data);
+  await persistNow();
+  if(SYNC){
+    try{
+      if(!syncTok) syncTok=await sha256hex('yingway|'+(session?.pass||pass));
+      const r=await fetch(SYNC,{headers:{Authorization:'Bearer '+syncTok},cache:'no-store'});
+      if(r.ok){ const j=await r.json(); syncRev=j.rev; }
+    }catch(e){}
+    await syncPush(true);
+  }
+  toast('Daten aus dem Bundle geladen');
+  draw();
 }
 async function changePass(){
   if(!session)return;
