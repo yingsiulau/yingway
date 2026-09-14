@@ -14,6 +14,7 @@
   --pos:#2f7d54; --pos-bg:#e4efe7; --neg:#b23c33; --neg-bg:#f4e3e1;
   --shadow:0 1px 2px rgba(30,28,20,.05),0 8px 24px -12px rgba(30,28,20,.14);
   --panel-shadow:-16px 0 48px -24px rgba(20,18,12,.35);
+  --drawer-shadow:16px 0 48px -24px rgba(20,18,12,.35);
   color-scheme:light;
 }
 :root:not([data-theme="light"]){ @media (prefers-color-scheme:dark){
@@ -24,6 +25,7 @@
   --pos:#5cb083; --pos-bg:#1c2f26; --neg:#dd7b71; --neg-bg:#33221f;
   --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px -14px rgba(0,0,0,.5);
   --panel-shadow:-16px 0 48px -24px rgba(0,0,0,.6);
+  --drawer-shadow:16px 0 48px -24px rgba(0,0,0,.6);
   color-scheme:dark;
 }}
 :root[data-theme="dark"]{
@@ -34,6 +36,7 @@
   --pos:#5cb083; --pos-bg:#1c2f26; --neg:#dd7b71; --neg-bg:#33221f;
   --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px -14px rgba(0,0,0,.5);
   --panel-shadow:-16px 0 48px -24px rgba(0,0,0,.6);
+  --drawer-shadow:16px 0 48px -24px rgba(0,0,0,.6);
   color-scheme:dark;
 }
 *{box-sizing:border-box}
@@ -51,18 +54,23 @@ input,select{font-family:inherit;font-size:14px}
 .pos{color:var(--pos)} .neg{color:var(--neg)}
 a{color:var(--gold)}
 
-/* ---------- shell ---------- */
-#app{display:grid;grid-template-columns:224px 1fr;min-height:100vh}
-#side{border-right:1px solid var(--line);background:var(--surface);
-  display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
-.brand{padding:22px 22px 16px;border-bottom:1px solid var(--line-soft)}
+/* ---------- shell: drawer nav (overlays content, "over" mode) ---------- */
+#app{min-height:100vh}
+#side{position:fixed;top:0;left:0;height:100vh;width:270px;max-width:85vw;
+  border-right:1px solid var(--line);background:var(--surface);box-shadow:var(--drawer-shadow);
+  display:flex;flex-direction:column;z-index:50;
+  transform:translateX(-100%);transition:transform .22s cubic-bezier(.4,0,.2,1)}
+#side.open{transform:translateX(0)}
+#navScrim{position:fixed;inset:0;background:rgba(15,13,8,.36);opacity:0;
+  pointer-events:none;transition:opacity .18s;z-index:48}
+#navScrim.open{opacity:1;pointer-events:auto}
+.brand{padding:18px 16px 18px 22px;border-bottom:1px solid var(--line-soft);
+  display:flex;align-items:center;justify-content:space-between;gap:8px}
 .brand .k{font-family:"Fraunces",Georgia,serif;font-size:20px;font-weight:600;
   display:flex;align-items:center;gap:9px;letter-spacing:-.02em}
-.brand .dot{width:10px;height:10px;border-radius:2px;background:var(--gold);
-  transform:rotate(45deg);flex:none}
-.brand .sub{color:var(--muted);font-size:11.5px;margin-top:5px;
-  text-transform:uppercase;letter-spacing:.14em}
-nav{padding:12px 12px;display:flex;flex-direction:column;gap:2px;flex:1}
+.dot{width:10px;height:10px;border-radius:2px;background:var(--gold);
+  transform:rotate(45deg);flex:none;display:inline-block}
+nav{padding:12px 12px;display:flex;flex-direction:column;gap:2px;flex:1;overflow-y:auto}
 .navlink{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:8px;
   color:var(--ink-soft);text-decoration:none;font-weight:500;font-size:13.5px;
   border:1px solid transparent;background:none;width:100%;text-align:left}
@@ -73,15 +81,19 @@ nav{padding:12px 12px;display:flex;flex-direction:column;gap:2px;flex:1}
   stroke-width:1.6;opacity:.8}
 .navlink .badge{margin-left:auto;font-size:11px;color:var(--muted);
   font-family:"IBM Plex Mono",monospace}
-.side-foot{padding:12px 16px;border-top:1px solid var(--line-soft);
-  display:flex;align-items:center;justify-content:space-between;gap:8px;
-  font-size:11.5px;color:var(--muted)}
+#side .side-foot{padding:12px 22px 18px;color:var(--faint);font-size:11px;
+  text-transform:uppercase;letter-spacing:.1em}
 .iconbtn{border:1px solid var(--line);background:var(--surface-2);color:var(--ink-soft);
-  width:30px;height:30px;border-radius:7px;display:grid;place-items:center;padding:0}
+  width:30px;height:30px;border-radius:7px;display:grid;place-items:center;padding:0;flex:none}
 .iconbtn:hover{border-color:var(--gold-soft)}
 .iconbtn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.7}
 
 main{padding:0;min-width:0}
+#topbar{position:sticky;top:0;z-index:15;background:var(--paper);
+  border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;
+  padding:10px 20px}
+.topbar-brand{font-family:"Fraunces",Georgia,serif;font-size:15.5px;font-weight:600;
+  display:flex;align-items:center;gap:8px;letter-spacing:-.02em;color:var(--ink)}
 .wrap{max-width:1180px;margin:0 auto;padding:26px 32px 80px}
 .phead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;
   flex-wrap:wrap;margin-bottom:22px}
@@ -245,18 +257,8 @@ tfoot td{padding:10px 12px;font-weight:600;border-top:2px solid var(--line);
 .tag-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
 
 @media (max-width:900px){
-  #app{display:block}
-  #side{position:sticky;top:0;z-index:30;height:auto;width:100%;min-width:0;
-    flex-direction:column;border-right:none;border-bottom:1px solid var(--line)}
-  #side>*{min-width:0;max-width:100%}
-  .brand{display:flex;align-items:center;justify-content:space-between;padding:12px 16px}
-  .brand .sub{display:none}
-  nav{flex-direction:row;overflow-x:auto;padding:8px;gap:4px;
-    -webkit-overflow-scrolling:touch;scrollbar-width:none}
-  nav::-webkit-scrollbar{display:none}
-  .navlink{white-space:nowrap;padding:8px 12px;flex:none}
-  .navlink .badge{display:none}
-  .side-foot{padding:8px 16px;border-top:1px solid var(--line-soft)}
+  #topbar{padding:10px 14px}
+  .topbar-brand{font-size:14px}
   main{min-width:0}
   .wrap{padding:20px 14px 64px;max-width:100%}
   .kpis,.kpis.kpis-4{grid-template-columns:repeat(2,1fr)}
@@ -301,7 +303,7 @@ img{max-width:100%}
 .syncpill.offline,.syncpill.forbidden{color:var(--neg);border-color:var(--neg)}
 .syncpill.conflict{color:#fff;background:var(--neg);border-color:var(--neg)}
 :root[data-theme="dark"] .syncpill.conflict{color:#1a1206}
-.side-foot{flex-wrap:wrap}
+#topbar{flex-wrap:wrap}
 .conflict-bar{background:var(--neg);color:#fff;padding:10px 16px;font-size:12.5px;
   display:flex;align-items:center;gap:12px;justify-content:center;flex-wrap:wrap}
 :root[data-theme="dark"] .conflict-bar{color:#1a1206}
@@ -313,14 +315,22 @@ img{max-width:100%}
 <div id="app">
   <aside id="side">
     <div class="brand">
-      <div>
-        <div class="k"><span class="dot"></span>Buchhaltung</div>
-        <div class="sub">TCG · Ein &amp; Ausgänge</div>
-      </div>
-      <button class="iconbtn" id="themeBtn" title="Theme wechseln" hidden></button>
+      <div class="k"><span class="dot"></span>Yingway</div>
+      <button class="iconbtn" id="drawerClose" aria-label="Menü schliessen">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
     </div>
     <nav id="nav"></nav>
-    <div class="side-foot">
+    <div class="side-foot">TCG · Ein &amp; Ausgänge</div>
+  </aside>
+  <div id="navScrim"></div>
+  <main>
+    <div id="topbar">
+      <button class="iconbtn" id="menuBtn" aria-label="Menü öffnen">
+        <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <div class="topbar-brand"><span class="dot"></span>Yingway</div>
+      <div class="spacer"></div>
       <span class="syncpill" id="syncBadge" hidden></span>
       <button class="lockbtn" id="lockNow" title="Sperren">
         <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="1.5"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>Sperren</button>
@@ -328,8 +338,6 @@ img{max-width:100%}
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></svg>
       </button>
     </div>
-  </aside>
-  <main>
     <div class="conflict-bar" id="conflict" hidden>
       Diese Buchhaltung wurde auf einem anderen Gerät geändert. Deine letzte Änderung wurde nicht übernommen.
       <button id="reloadNow">Neu laden</button>
@@ -367,10 +375,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20260914d"></script>
-<script src="seed.enc.js?b=20260914d"></script>
+<script src="sync.config.js?b=20260914e"></script>
+<script src="seed.enc.js?b=20260914e"></script>
 <script>
-const BUILD='2026-09-14d';
+const BUILD='2026-09-14e';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -705,8 +713,18 @@ function go(r){
   state.q='';state.cat='';state.shop='';state.month='';state.stockOnly=false;
   state.sort=r==='lager'?{k:'margin',dir:-1}:{k:'d',dir:-1};
   closeForm();
+  closeDrawer();
   draw();
 }
+
+/* ---------- Nav-Drawer (überlagert den Inhalt, wie Material "over" mode) ---------- */
+let drawerOpen=false;
+function openDrawer(){ $('#side').classList.add('open'); $('#navScrim').classList.add('open'); drawerOpen=true; }
+function closeDrawer(){ $('#side').classList.remove('open'); $('#navScrim').classList.remove('open'); drawerOpen=false; }
+function toggleDrawer(){ drawerOpen?closeDrawer():openDrawer(); }
+$('#menuBtn').onclick=toggleDrawer;
+$('#drawerClose').onclick=closeDrawer;
+$('#navScrim').onclick=closeDrawer;
 
 /* ================= RENDER ================= */
 let page=0;
@@ -1338,7 +1356,7 @@ function confirmDel(L,row){
 function openPanel(){ $('#scrim').classList.add('open'); $('#panel').classList.add('open'); }
 function closeForm(){ $('#scrim').classList.remove('open'); $('#panel').classList.remove('open'); editing=null; }
 $('#panelX').onclick=closeForm; $('#scrim').onclick=closeForm;
-document.addEventListener('keydown',e=>{ if(e.key==='Escape')closeForm(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeForm(); closeDrawer(); } });
 
 /* ---------- CSV ---------- */
 async function exportCSV(){
