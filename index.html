@@ -196,6 +196,20 @@ tr:hover .rowact{opacity:1}
 .rowact svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.7}
 tfoot td{padding:10px 12px;font-weight:600;border-top:2px solid var(--line);
   background:var(--surface-2)}
+/* erste Spalte (Datum/SKU) und letzte Spalte (Aktionen bzw. Marge %) beim horizontalen
+   Scrollen angeheftet, damit man z.B. auf einem Laptop nicht erst nach rechts scrollen
+   muss, um einen Eintrag zu bearbeiten */
+thead th:first-child,tbody td:first-child,tfoot td:first-child{
+  position:sticky;left:0;z-index:3}
+tbody td:first-child{background:var(--surface);box-shadow:1px 0 0 0 var(--line-soft)}
+tbody tr:hover td:first-child{background:var(--surface-2)}
+tfoot td:first-child{box-shadow:1px 0 0 0 var(--line)}
+thead th:last-child,tbody td:last-child,tfoot td:last-child{
+  position:sticky;right:0;z-index:3}
+tbody td:last-child{background:var(--surface);box-shadow:-1px 0 0 0 var(--line-soft)}
+tbody tr:hover td:last-child{background:var(--surface-2)}
+tfoot td:last-child{box-shadow:-1px 0 0 0 var(--line)}
+thead th:first-child,thead th:last-child{z-index:4}
 .pager{display:flex;align-items:center;justify-content:center;gap:12px;
   padding:12px;color:var(--muted);font-size:12.5px}
 .pager button{border:1px solid var(--line);background:var(--surface);border-radius:7px;
@@ -256,6 +270,12 @@ tfoot td{padding:10px 12px;font-weight:600;border-top:2px solid var(--line);
 
 .tag-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
 
+/* schmalere Laptops (~1024–1220px): 5 KPI-Karten pro Zeile werden knapp –
+   Zahl etwas verkleinern, bevor sie umbricht oder über den Rand läuft */
+@media (min-width:901px) and (max-width:1220px){
+  .kpi .v{font-size:19.5px}
+  .kpi{padding:13px 12px}
+}
 @media (max-width:900px){
   #topbar{padding:10px 14px}
   .topbar-brand{font-size:14px}
@@ -375,10 +395,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20260914e"></script>
-<script src="seed.enc.js?b=20260914e"></script>
+<script src="sync.config.js?b=20260914f"></script>
+<script src="seed.enc.js?b=20260914f"></script>
 <script>
-const BUILD='2026-09-14e';
+const BUILD='2026-09-14f';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
