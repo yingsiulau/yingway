@@ -367,10 +367,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20260914b"></script>
-<script src="seed.enc.js?b=20260914b"></script>
+<script src="sync.config.js?b=20260914c"></script>
+<script src="seed.enc.js?b=20260914c"></script>
 <script>
-const BUILD='2026-09-14b';
+const BUILD='2026-09-14c';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -911,7 +911,8 @@ const COLS={
   warenausgang:[
     ['d','Datum','d'],['sku','SKU','s'],['cat','Kategorie','s'],
     ['qty','Menge','n'],['price','Verkauf','n'],['cust','Kd-Versand','n'],['fees','Gebühren','n'],
-    ['porto','Porto','n'],['net','Netto','n'],['shop','Laden','s'],['person','Käufer','s'] ],
+    ['porto','Porto','n'],['net','Netto','n'],['shop','Laden','s'],['person','Käufer','s'],
+    ['bem','Bemerkung','w'] ],
   laufende_kosten:[
     ['d','Datum','d'],['cat','Kategorie','s'],['desc','Beschreibung','w'],['qty','Menge','n'],
     ['total','Betrag','n'],['shop','Laden','s'],['receipt','Beleg','s'] ],
@@ -1168,7 +1169,8 @@ const FORMS={
     ['qty','Menge','num'],['price','Verkaufspreis brutto','num'],
     ['cust','Erhaltene Versandkosten (Kunde)','num'],['fees','Plattform-Gebühren','num'],
     ['porto','Reale Versandkosten (Porto)','num'],['net','Netto-Einnahme','num'],
-    ['shop','Laden / Plattform','datalist:shop'],['person','Käufer','text'] ],
+    ['shop','Laden / Plattform','datalist:shop'],['person','Käufer','text'],
+    ['bem','Bemerkung','text'] ],
   laufende_kosten:[
     ['d','Datum','date'],['cat','Kategorie','select:kost'],['desc','Beschreibung','text'],
     ['qty','Menge','num'],['total','Gesamtpreis','num'],['shop','Laden','datalist:shop'],
@@ -1197,7 +1199,7 @@ function openForm(L,row){
     else if(type.startsWith('datalist:')){ const src=type.split(':')[1];
       input=`<input type="text" name="${k}" value="${esc(val(k))}" list="dl_${k}" autocomplete="off">
         <datalist id="dl_${k}">${(lists[src]||[]).map(o=>`<option value="${esc(o)}">`).join('')}</datalist>`; }
-    else input=`<input type="text" name="${k}" value="${esc(val(k))}">`;
+    else input=`<input type="text" name="${k}" value="${esc(val(k))}" ${k==='bem'?'placeholder="z. B. Sammelversand, ausserhalb Ricardo verkauft"':''}>`;
     return `<div class="fg" data-k="${k}"><label>${lbl}</label>${input}</div>`;
   });
 
