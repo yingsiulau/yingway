@@ -367,10 +367,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20260910a"></script>
-<script src="seed.enc.js?b=20260910a"></script>
+<script src="sync.config.js?b=20260914a"></script>
+<script src="seed.enc.js?b=20260914a"></script>
 <script>
-const BUILD='2026-09-10a';
+const BUILD='2026-09-14a';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -473,10 +473,14 @@ function loadInto(data){
 /* Zentrale Anmeldung: probiert lokalen Tresor -> Cloud -> Seed -> Neuanlage.
    Wirft 'wrong' bei falscher Passphrase, 'short' bei zu kurzer Neu-Passphrase. */
 async function getSeed(){
+  // Frischer Abruf zählt immer, auch wenn er "kein Bundle" ergibt – nur bei
+  // einem echten Abruffehler (offline etc.) auf das evtl. gecachte <script>-Tag zurückfallen.
   try{
     const r=await fetch('seed.enc.js?t='+Date.now(),{cache:'no-store'});
-    const m=(await r.text()).match(/window\.__SEED__\s*=\s*"([^"]+)"/);
-    if(m) return m[1];
+    if(r.ok){
+      const m=(await r.text()).match(/window\.__SEED__\s*=\s*"([^"]+)"/);
+      return m?m[1]:null;
+    }
   }catch(e){}
   return (typeof window.__SEED__==='string' && window.__SEED__) ? window.__SEED__ : null;
 }
@@ -1209,7 +1213,18 @@ function openForm(L,row){
     if(hit){ ['cat','form','set'].forEach(k=>{ const el=form.querySelector(`[name=${k}]`);
       if(el&&!el.value)el.value=hit[k]||''; }); updateCalc(); }
   };
-  form.oninput=updateCalc; updateCalc();
+  let feesTouched=!isNew; // bei bestehenden Einträgen nichts automatisch überschreiben
+  form.oninput=(e)=>{
+    if(L==='warenausgang' && e.target){
+      if(e.target.name==='fees') feesTouched=true;
+      if(e.target.name==='price' && !feesTouched){
+        const feesEl=form.querySelector('[name=fees]'); const priceVal=num(e.target.value);
+        if(feesEl) feesEl.value = priceVal ? (priceVal*0.10).toFixed(2) : '';
+      }
+    }
+    updateCalc();
+  };
+  updateCalc();
   function updateCalc(){
     const g=k=>num(form.querySelector(`[name=${k}]`)?.value);
     const box=$('#calcBox'); if(!box)return;
