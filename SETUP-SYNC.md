@@ -70,6 +70,34 @@ beide Geräte denselben Stand; Änderungen werden nach ~1 s abgeglichen und beim
 
 ---
 
+## PDF-Belege aktivieren (optional)
+
+Damit du bei Ein-/Ausgängen und laufenden Kosten einen PDF-Beleg anhängen und
+sie gesammelt als ZIP herunterladen kannst, braucht der Worker zusätzlich
+einen **R2-Bucket** (Cloudflare-Objektspeicher, Gratis-Tarif: 10 GB, keine
+Transfergebühren). Belege werden – wie der Vault – im Browser AES-256-GCM
+verschlüsselt hochgeladen; der Worker/R2 sieht nur Chiffretext.
+
+Einmalig, nur von dir:
+
+```bash
+cd /Users/ylau/Yingway/worker
+wrangler r2 bucket create yingway-files
+wrangler deploy
+```
+
+`worker/wrangler.toml` hat den nötigen `[[r2_buckets]]`-Block schon (Binding
+`FILES`, Bucket-Name `yingway-files`) – `wrangler deploy` reicht danach aus.
+Kein Eintrag in `sync.config.js` nötig, die App erkennt R2 automatisch, sobald
+`wrangler deploy` durch ist (Seite einmal neu laden).
+
+In den Formularen erscheint dann bei Eingängen/Ausgängen/laufenden Kosten ein
+Feld „Beleg (PDF)" (max. 15 MB), in der Tabelle ein kleines PDF-Symbol bei
+Einträgen mit Anhang, und in der Übersicht die Karte **„Belege"** zum
+gesammelten ZIP-Export nach Journal + Zeitraum.
+
+---
+
 ## Sicherheit & Grenzen
 
 - **Ende-zu-Ende verschlüsselt**: der Worker speichert nur AES-256-GCM-Chiffretext.

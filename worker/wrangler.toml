@@ -7,3 +7,9 @@ workers_dev = true
 [[kv_namespaces]]
 binding = "DB"
 id = "5fb396d04a8b429eb0f19f21b9d94b80"
+
+# Optional, für PDF-Belege. Wird von  wrangler r2 bucket create yingway-files  gefüllt
+# (siehe SETUP-SYNC.md) – ohne diesen Block laufen Vault-Sync weiter, nur Belege nicht.
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "yingway-files"

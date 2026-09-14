@@ -219,6 +219,21 @@ tfoot td{padding:10px 12px;font-weight:600;border-top:2px solid var(--line);
 .calc b{color:var(--ink);font-family:"IBM Plex Mono",monospace}
 .linkbtn{background:none;border:none;color:var(--gold);font-size:11.5px;padding:0;
   text-decoration:underline}
+.fghint{font-size:11px;color:var(--faint);line-height:1.5;margin:0}
+.chk{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-soft)}
+.chk input{width:auto}
+.pdfdrop{display:flex;align-items:center;gap:8px;justify-content:center;padding:13px;
+  border:1px dashed var(--line);border-radius:9px;color:var(--muted);font-size:12.5px;
+  cursor:pointer;width:100%}
+.pdfdrop:hover{border-color:var(--gold-soft);color:var(--ink-soft)}
+.pdfdrop svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;flex:none}
+.pdfrow{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);
+  border-radius:9px;background:var(--surface-2)}
+.pdfico{width:22px;height:22px;stroke:var(--gold);fill:none;stroke-width:1.6;flex:none}
+.pdfmeta{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.pdfmeta b{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pdfmeta span{font-size:11px;color:var(--muted)}
+.pdfacts{display:flex;gap:6px;flex:none;flex-wrap:wrap}
 
 /* ---------- toast ---------- */
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);
@@ -352,10 +367,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20260909e"></script>
-<script src="seed.enc.js?b=20260909e"></script>
+<script src="sync.config.js?b=20260910a"></script>
+<script src="seed.enc.js?b=20260910a"></script>
 <script>
-const BUILD='2026-09-09e';
+const BUILD='2026-09-10a';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -377,6 +392,7 @@ let period='all';
 const VKEY='yingway.vault.v1';
 const RKEY='yingway.rev.v1';
 const SYNC=(typeof window.__SYNC_URL__==='string'?window.__SYNC_URL__:'').trim();
+const FILES_BASE=SYNC?SYNC.replace(/\/vault\/?$/,'/files'):'';
 const store={wareneingang:[],warenausgang:[],laufende_kosten:[]};
 let ready={wareneingang:false,warenausgang:false,laufende_kosten:false};
 let session=null;         // {key:CryptoKey, salt:Uint8Array, pass:string}
@@ -414,6 +430,21 @@ async function decryptJSON(blobB64,pass){
   const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,ct);
   return {data:JSON.parse(dec.decode(pt)),key,salt};
 }
+/* Binärvariante für Datei-Anhänge (PDF): salt(16)|iv(12)|ciphertext, roh als Bytes. */
+async function encryptBytes(bytes,pass){
+  const salt=crypto.getRandomValues(new Uint8Array(16));
+  const key=await deriveKey(pass,salt);
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,bytes);
+  const out=new Uint8Array(16+12+ct.byteLength);
+  out.set(salt,0); out.set(iv,16); out.set(new Uint8Array(ct),28);
+  return out;
+}
+async function decryptBytes(bytes,pass){
+  const salt=bytes.slice(0,16), iv=bytes.slice(16,28), ct=bytes.slice(28);
+  const key=await deriveKey(pass,salt);
+  return new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv},key,ct));
+}
 
 /* ---------- theme ---------- */
 (function(){
@@ -441,6 +472,14 @@ function loadInto(data){
 
 /* Zentrale Anmeldung: probiert lokalen Tresor -> Cloud -> Seed -> Neuanlage.
    Wirft 'wrong' bei falscher Passphrase, 'short' bei zu kurzer Neu-Passphrase. */
+async function getSeed(){
+  try{
+    const r=await fetch('seed.enc.js?t='+Date.now(),{cache:'no-store'});
+    const m=(await r.text()).match(/window\.__SEED__\s*=\s*"([^"]+)"/);
+    if(m) return m[1];
+  }catch(e){}
+  return (typeof window.__SEED__==='string' && window.__SEED__) ? window.__SEED__ : null;
+}
 async function attemptEnter(pass){
   const localVault=lsGet(VKEY);
   if(localVault){
@@ -473,8 +512,9 @@ async function attemptEnter(pass){
       return;
     }
   }
-  if(typeof window.__SEED__==='string' && window.__SEED__){
-    let d; try{ d=await decryptJSON(window.__SEED__,pass); }catch(e){ throw new Error('wrong'); }
+  const seed=await getSeed();
+  if(seed){
+    let d; try{ d=await decryptJSON(seed,pass); }catch(e){ throw new Error('wrong'); }
     const salt=crypto.getRandomValues(new Uint8Array(16));
     const key=await deriveKey(pass,salt);
     loadInto(d.data); session={key,salt,pass};
@@ -553,8 +593,37 @@ async function saveRow(L,row){
 }
 async function removeRow(L,row){
   store[L]=store[L].filter(r=>r.id!==row.id);
+  if(row.pdf) deleteReceipt(L,row.id).catch(()=>{});
   persist();
 }
+
+/* ---------- Belege (PDF-Anhänge, im R2-Bucket über den Worker) ---------- */
+async function filesTok(){ if(!syncTok) syncTok=await sha256hex('yingway|'+session.pass); return syncTok; }
+async function uploadReceipt(L,id,file){
+  if(!FILES_BASE||!session) throw new Error('no-sync');
+  if(file.size>15*1024*1024) throw new Error('too-big');
+  const bytes=new Uint8Array(await file.arrayBuffer());
+  const enc2=await encryptBytes(bytes,session.pass);
+  const tok=await filesTok();
+  const r=await fetch(`${FILES_BASE}/${L}/${id}`,{method:'PUT',
+    headers:{Authorization:'Bearer '+tok,'Content-Type':'application/octet-stream'},body:enc2});
+  if(!r.ok) throw new Error('upload-failed');
+}
+async function downloadReceipt(L,id){
+  if(!FILES_BASE||!session) throw new Error('no-sync');
+  const tok=await filesTok();
+  const r=await fetch(`${FILES_BASE}/${L}/${id}`,{headers:{Authorization:'Bearer '+tok},cache:'no-store'});
+  if(!r.ok) throw new Error('not-found');
+  const bytes=new Uint8Array(await r.arrayBuffer());
+  return decryptBytes(bytes,session.pass);
+}
+async function deleteReceipt(L,id){
+  if(!FILES_BASE||!session) return;
+  try{ const tok=await filesTok();
+    await fetch(`${FILES_BASE}/${L}/${id}`,{method:'DELETE',headers:{Authorization:'Bearer '+tok}}); }catch(e){}
+}
+function fmtBytes(n){ n=Number(n)||0; if(n<1024)return n+' B'; if(n<1024*1024)return (n/1024).toFixed(0)+' KB';
+  return (n/1024/1024).toFixed(1)+' MB'; }
 
 /* ---------- derived: Lager ---------- */
 function lager(){
@@ -739,6 +808,19 @@ function viewOverview(){
       </div>
     </div>
   </div>
+
+  ${FILES_BASE?`<div class="card">
+    <h2>Belege</h2>
+    <div class="cap">PDF-Anhänge deiner Einträge gesammelt als ZIP herunterladen – gefiltert nach Journal und Zeitraum.</div>
+    <div class="toolbar" style="margin:0 0 10px">
+      <label class="chk"><input type="checkbox" class="recLedger" value="wareneingang" checked>Eingänge</label>
+      <label class="chk"><input type="checkbox" class="recLedger" value="warenausgang" checked>Ausgänge</label>
+      <label class="chk"><input type="checkbox" class="recLedger" value="laufende_kosten" checked>Laufende Kosten</label>
+      <select id="recScope"><option value="all">Gesamter Zeitraum</option>${recScopeOptions()}</select>
+    </div>
+    <div class="count" id="recCount"></div>
+    <button class="btn" id="recDownload" style="margin-top:12px">Belege als ZIP herunterladen</button>
+  </div>`:''}
 
   <div class="card">
     <h2>Daten &amp; Sicherung</h2>
@@ -933,6 +1015,7 @@ function rowHTML(L,r,cols){
     return `<td>${esc(v||'—')}</td>`;
   }).join('')}
   <td><div class="rowact">
+    ${r.pdf?`<button data-pdf title="Beleg ansehen · ${esc(r.pdf.name)}"><svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/></svg></button>`:''}
     <button data-edit title="Bearbeiten"><svg viewBox="0 0 24 24"><path d="M4 20h4l10-10-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg></button>
     <button data-del title="Löschen"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13"/></svg></button>
   </div></td></tr>`;
@@ -1028,6 +1111,12 @@ function wire(){
     if(syncState==='ok') toast('Aktueller Stand geladen'); draw(); });
   bind('dBundle',loadFromBundle);
   const sv=$('#savedAt'); if(sv)sv.textContent = lastSaved ? 'Zuletzt auf diesem Gerät gespeichert: '+lastSaved : 'Noch nicht gespeichert.';
+  if($('#recDownload')){
+    $$('.recLedger').forEach(c=>c.onchange=updateRecCount);
+    const rs=$('#recScope'); if(rs)rs.onchange=updateRecCount;
+    updateRecCount();
+    $('#recDownload').onclick=downloadReceiptsZip;
+  }
   $$('th[data-sk]').forEach(th=>th.onclick=()=>{
     const k=th.dataset.sk;
     if(state.sort.k===k)state.sort.dir*=-1;
@@ -1035,12 +1124,22 @@ function wire(){
     draw();
   });
   $$('#view tbody tr').forEach(tr=>{
-    const e=tr.querySelector('[data-edit]'), d=tr.querySelector('[data-del]');
+    const e=tr.querySelector('[data-edit]'), d=tr.querySelector('[data-del]'), p=tr.querySelector('[data-pdf]');
     if(!e)return;
     const idx=[...tr.parentNode.children].indexOf(tr);
     e.onclick=()=>{ const r=currentSlice[idx]; if(r)openForm(route,r); };
     d.onclick=()=>{ const r=currentSlice[idx]; if(r)confirmDel(route,r); };
+    if(p) p.onclick=()=>{ const r=currentSlice[idx]; if(r)viewReceipt(route,r); };
   });
+}
+async function viewReceipt(L,r){
+  toast('Beleg wird geladen…');
+  try{
+    const bytes=await downloadReceipt(L,r.id);
+    const blob=new Blob([bytes],{type:'application/pdf'});
+    const url=URL.createObjectURL(blob); window.open(url,'_blank');
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+  }catch(e){ toast('Konnte Beleg nicht laden'); }
 }
 function debounce(fn,ms){ let t; return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms);}; }
 
@@ -1063,9 +1162,10 @@ const FORMS={
     ['qty','Menge','num'],['total','Gesamtpreis','num'],['shop','Laden','datalist:shop'],
     ['receipt','Beleg-Nummer','text'] ],
 };
-let editing=null;
+let editing=null, pendingFile=null, pendingRemove=false;
 function openForm(L,row){
-  editing={L,row,oldYm:row?row._ym:null};
+  editing={L,row,oldYm:row?row._ym:null,id:row?row.id:uid()};
+  pendingFile=null; pendingRemove=false;
   const isNew=!row;
   $('#panelTitle').textContent=(isNew?'Neuer Eintrag · ':'Bearbeiten · ')+TITLES[L][0];
   const all=rows(L);
@@ -1093,10 +1193,12 @@ function openForm(L,row){
   let body=fields.join('');
   $('#panelBody').innerHTML=`<form id="entryForm">${body}
     ${L!=='laufende_kosten'?`<div class="calc" id="calcBox"></div>`:''}
+    <div class="fg"><label>Beleg (PDF)</label><div id="pdfBox"></div></div>
   </form>`;
   $('#panelFoot').innerHTML=`
     <button class="btn ghost" id="cancelBtn" type="button">Abbrechen</button>
     <button class="btn" id="saveBtn" type="button">${isNew?'Anlegen':'Speichern'}</button>`;
+  renderPdfBox();
 
   const form=$('#entryForm');
   // smart autofill from SKU
@@ -1131,10 +1233,48 @@ function openForm(L,row){
   $('#saveBtn').onclick=submitForm;
   openPanel();
 }
+function renderPdfBox(){
+  const box=$('#pdfBox'); if(!box) return;
+  if(!FILES_BASE){
+    box.innerHTML=`<p class="fghint">Beleg-Anhänge brauchen aktiven Sync (Cloudflare). Siehe SETUP-SYNC.md.</p>`;
+    return;
+  }
+  const existing=editing.row?.pdf||null;
+  const cur = pendingRemove ? null : (pendingFile ? {name:pendingFile.name,size:pendingFile.size,_pending:true} : existing);
+  if(cur){
+    box.innerHTML=`<div class="pdfrow">
+      <svg class="pdfico" viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/></svg>
+      <div class="pdfmeta"><b>${esc(cur.name)}</b><span>${fmtBytes(cur.size)}${cur._pending?' · wird beim Speichern hochgeladen':''}</span></div>
+      <div class="pdfacts">
+        ${cur._pending?'':'<button type="button" class="btn ghost sm" id="pdfView">Ansehen</button>'}
+        <button type="button" class="btn ghost sm" id="pdfReplace">Ersetzen</button>
+        <button type="button" class="btn ghost sm" id="pdfRemove" style="color:var(--neg)">Entfernen</button>
+      </div></div>
+      <input type="file" accept="application/pdf" id="pdfInput" hidden>`;
+  }else{
+    box.innerHTML=`<label class="pdfdrop" for="pdfInput">
+      <svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M5 21h14"/></svg>PDF-Beleg anhängen (optional, max. 15 MB)</label>
+      <input type="file" accept="application/pdf" id="pdfInput" hidden>`;
+  }
+  const inp=$('#pdfInput');
+  if(inp)inp.onchange=()=>{
+    const f=inp.files[0]; if(!f)return;
+    if(!(f.type==='application/pdf'||f.name.toLowerCase().endsWith('.pdf'))){ toast('Bitte eine PDF-Datei wählen'); return; }
+    if(f.size>15*1024*1024){ toast('Max. 15 MB'); return; }
+    pendingFile=f; pendingRemove=false; renderPdfBox();
+  };
+  const rep=$('#pdfReplace'); if(rep)rep.onclick=()=>inp.click();
+  const rm=$('#pdfRemove'); if(rm)rm.onclick=()=>{ pendingRemove=true; pendingFile=null; renderPdfBox(); };
+  const vw=$('#pdfView'); if(vw)vw.onclick=async()=>{
+    vw.disabled=true; vw.textContent='Lädt…';
+    try{ await viewReceipt(editing.L,{id:editing.id}); }
+    finally{ vw.disabled=false; vw.textContent='Ansehen'; }
+  };
+}
 async function submitForm(){
-  const {L,row,oldYm}=editing;
+  const {L,row,oldYm,id}=editing;
   const form=$('#entryForm'); const fd=new FormData(form);
-  const rec=row?{...row}:{id:uid()};
+  const rec=row?{...row}:{id};
   for(const [k,type] of FORMS[L].map(f=>[f[0],f[2]])){
     let v=fd.get(k);
     if(type==='num')v=num(v);
@@ -1145,9 +1285,16 @@ async function submitForm(){
   if(L==='warenausgang'&&!num(fd.get('net')))rec.net=+(num(rec.price)+num(rec.cust)-num(rec.fees)-num(rec.porto)).toFixed(2);
   if(L==='wareneingang'&&!num(fd.get('gross')))rec.gross=+(num(rec.ek)+num(rec.ship)).toFixed(2);
   delete rec._ym;
-  $('#saveBtn').textContent='…';
-  try{ await saveRow(L,rec,oldYm); toast(row?'Gespeichert':'Eintrag angelegt'); closeForm(); draw(); }
-  catch(e){ toast('Fehler beim Speichern'); $('#saveBtn').textContent='Speichern'; }
+  const btn=$('#saveBtn'); btn.textContent='…'; btn.disabled=true;
+  try{
+    if(pendingRemove && rec.pdf){ await deleteReceipt(L,rec.id); delete rec.pdf; }
+    if(pendingFile){ await uploadReceipt(L,rec.id,pendingFile);
+      rec.pdf={name:pendingFile.name,size:pendingFile.size,at:new Date().toISOString()}; }
+    await saveRow(L,rec,oldYm); toast(row?'Gespeichert':'Eintrag angelegt'); closeForm(); draw();
+  }catch(e){
+    toast(e.message==='no-sync'?'Beleg braucht aktiven Sync':e.message==='too-big'?'PDF zu gross (max. 15 MB)':'Fehler beim Speichern');
+    btn.textContent=row?'Speichern':'Anlegen'; btn.disabled=false;
+  }
 }
 function confirmDel(L,row){
   editing={L,row};
@@ -1189,12 +1336,63 @@ async function exportCSV(){
   toast('CSV heruntergeladen');
 }
 function today(){ return new Date().toISOString().slice(0,10); }
-function downloadFile(filename,text,mime){
-  const blob=new Blob([text],{type:(mime||'text/plain')+';charset=utf-8'});
+function downloadFile(filename,data,mime){
+  const isText=typeof data==='string';
+  const type=mime||(isText?'text/plain':'application/octet-stream');
+  const blob=new Blob([data],{type:isText?type+';charset=utf-8':type});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a'); a.href=url; a.download=filename;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+/* ---------- Minimaler ZIP-Writer (nur STORE, keine Kompression – PDFs sind eh schon komprimiert) ---------- */
+function crc32(buf){
+  if(!crc32.table){
+    crc32.table=new Uint32Array(256);
+    for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=c&1?(0xEDB88320^(c>>>1)):(c>>>1); crc32.table[n]=c>>>0; }
+  }
+  let crc=0xFFFFFFFF;
+  for(let i=0;i<buf.length;i++) crc=crc32.table[(crc^buf[i])&0xFF]^(crc>>>8);
+  return (crc^0xFFFFFFFF)>>>0;
+}
+function buildZip(files){
+  const enc2=new TextEncoder();
+  const now=new Date();
+  const zt=((now.getHours()&0x1F)<<11)|((now.getMinutes()&0x3F)<<5)|((now.getSeconds()>>1)&0x1F);
+  const zd=(((now.getFullYear()-1980)&0x7F)<<9)|(((now.getMonth()+1)&0xF)<<5)|(now.getDate()&0x1F);
+  const UTF8=0x0800;
+  const chunks=[], central=[]; let offset=0;
+  for(const f of files){
+    const name=enc2.encode(f.name);
+    const data=f.data instanceof Uint8Array?f.data:new Uint8Array(f.data);
+    const crc=crc32(data);
+    const lh=new Uint8Array(30+name.length); const lv=new DataView(lh.buffer);
+    lv.setUint32(0,0x04034b50,true); lv.setUint16(4,20,true); lv.setUint16(6,UTF8,true);
+    lv.setUint16(8,0,true); lv.setUint16(10,zt,true); lv.setUint16(12,zd,true);
+    lv.setUint32(14,crc,true); lv.setUint32(18,data.length,true); lv.setUint32(22,data.length,true);
+    lv.setUint16(26,name.length,true); lv.setUint16(28,0,true);
+    lh.set(name,30);
+    chunks.push(lh,data);
+    const ch=new Uint8Array(46+name.length); const cv=new DataView(ch.buffer);
+    cv.setUint32(0,0x02014b50,true); cv.setUint16(4,20,true); cv.setUint16(6,20,true); cv.setUint16(8,UTF8,true);
+    cv.setUint16(10,0,true); cv.setUint16(12,zt,true); cv.setUint16(14,zd,true);
+    cv.setUint32(16,crc,true); cv.setUint32(20,data.length,true); cv.setUint32(24,data.length,true);
+    cv.setUint16(28,name.length,true); cv.setUint32(42,offset,true);
+    ch.set(name,46);
+    central.push(ch);
+    offset+=lh.length+data.length;
+  }
+  const centralStart=offset; let centralSize=0;
+  for(const c of central){ chunks.push(c); centralSize+=c.length; }
+  const eocd=new Uint8Array(22); const ev=new DataView(eocd.buffer);
+  ev.setUint32(0,0x06054b50,true); ev.setUint16(8,files.length,true); ev.setUint16(10,files.length,true);
+  ev.setUint32(12,centralSize,true); ev.setUint32(16,centralStart,true);
+  chunks.push(eocd);
+  let total=0; for(const c of chunks) total+=c.length;
+  const out=new Uint8Array(total); let p=0;
+  for(const c of chunks){ out.set(c,p); p+=c.length; }
+  return out;
 }
 function exportJSON(){
   const payload={wareneingang:store.wareneingang,warenausgang:store.warenausgang,
@@ -1235,13 +1433,8 @@ function importData(){
   inp.click();
 }
 async function loadFromBundle(){
-  let seed = (typeof window.__SEED__==='string' && window.__SEED__) ? window.__SEED__ : null;
   toast('Bundle wird geladen…');
-  try{
-    const r=await fetch('seed.enc.js?t='+Date.now(),{cache:'no-store'});
-    const m=(await r.text()).match(/window\.__SEED__\s*=\s*"([^"]+)"/);
-    if(m) seed=m[1];
-  }catch(e){}
+  const seed=await getSeed();
   if(!seed){ toast('Kein Bundle gefunden. Wurde seed.enc.js schon erzeugt und gepusht?'); return; }
   const pass = session?.pass || prompt('Passphrase, mit der das Bundle verschlüsselt wurde:');
   if(!pass) return;
@@ -1299,6 +1492,59 @@ function allFiltered(L){
     else{x=String(x||'').toLowerCase();y=String(y||'').toLowerCase();}
     return x<y?-dir:x>y?dir:0; });
   return f;
+}
+
+/* ---------- Belege-Export (ZIP über Ledger + Zeitraum) ---------- */
+function recScopeOptions(){
+  const months=periodMonthsAll(); const years=[...new Set(months.map(m=>m.slice(0,4)))].sort().reverse();
+  let html='';
+  for(const y of years) html+=`<option value="y:${y}">Jahr ${y}</option>`;
+  for(const m of months.slice().reverse()) html+=`<option value="m:${m}">${monthName(m)}</option>`;
+  return html;
+}
+function receiptsMatching(){
+  const boxes=$$('.recLedger:checked'); if(!boxes.length) return [];
+  const ledgersSel=boxes.map(c=>c.value);
+  const scope=$('#recScope')?.value||'all';
+  const out=[];
+  for(const L of ledgersSel){
+    for(const r of rows(L)){
+      if(!r.pdf) continue;
+      if(scope!=='all'){
+        const [kind,val]=scope.split(':');
+        if(kind==='y' && !r._ym.startsWith(val)) continue;
+        if(kind==='m' && r._ym!==val) continue;
+      }
+      out.push({...r,_L:L});
+    }
+  }
+  return out;
+}
+function updateRecCount(){
+  const el=$('#recCount'); if(!el) return;
+  const n=receiptsMatching().length;
+  el.innerHTML=`<b>${n}</b> Beleg${n===1?'':'e'} im gewählten Zeitraum`;
+}
+async function downloadReceiptsZip(){
+  const list=receiptsMatching();
+  if(!list.length){ toast('Keine Belege im gewählten Zeitraum'); return; }
+  const btn=$('#recDownload'); if(!btn) return;
+  btn.disabled=true;
+  const files=[]; let failed=0;
+  for(const r of list){
+    btn.textContent=`Lade Belege… (${files.length+failed}/${list.length})`;
+    try{
+      const bytes=await downloadReceipt(r._L,r.id);
+      const label=(DDE(r.d)+'_'+(r.sku||r.cat||r.desc||r.id)).replace(/[\\/:*?"<>|]/g,'-').slice(0,90);
+      let name=label+'.pdf', i=2;
+      while(files.some(f=>f.name===name)) name=label+'_'+(i++)+'.pdf';
+      files.push({name,data:bytes});
+    }catch(e){ failed++; }
+  }
+  btn.disabled=false; btn.textContent='Belege als ZIP herunterladen';
+  if(!files.length){ toast('Belege konnten nicht geladen werden'); return; }
+  downloadFile(`belege_${today()}.zip`, buildZip(files), 'application/zip');
+  toast(failed?`${files.length} Belege geladen, ${failed} fehlgeschlagen`:`${files.length} Belege heruntergeladen`);
 }
 
 /* ---------- toast ---------- */
