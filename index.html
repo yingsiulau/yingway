@@ -367,10 +367,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20260914a"></script>
-<script src="seed.enc.js?b=20260914a"></script>
+<script src="sync.config.js?b=20260914b"></script>
+<script src="seed.enc.js?b=20260914b"></script>
 <script>
-const BUILD='2026-09-14a';
+const BUILD='2026-09-14b';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -630,8 +630,12 @@ function fmtBytes(n){ n=Number(n)||0; if(n<1024)return n+' B'; if(n<1024*1024)re
   return (n/1024/1024).toFixed(1)+' MB'; }
 
 /* ---------- derived: Lager ---------- */
-function lager(){
-  const ein=rows('wareneingang'), aus=rows('warenausgang');
+function lager(sellPred){
+  // Einkaufsseite (Ø-Stückkosten) immer über die gesamte Historie – das ist
+  // eine Lagerbewertungs-Grösse. sellPred filtert nur, welche Verkäufe in
+  // "verkaufte Menge / Nettoeinnahmen / Marge" einfliessen (z.B. für einen
+  // gewählten Zeitraum in der Übersicht); ohne sellPred zählen alle Verkäufe.
+  const ein=rows('wareneingang'), aus=sellPred?rows('warenausgang').filter(sellPred):rows('warenausgang');
   const map=new Map();
   const key=r=>r.sku||r.set||'—';
   for(const r of ein){ const k=key(r); const o=map.get(k)||blank(k,r);
@@ -666,6 +670,7 @@ function periodMonths(){
   if(period==='all') return months;
   if(period==='3m') return months.slice(-3);
   if(period==='6m') return months.slice(-6);
+  if(period.startsWith('m:')) return months.filter(m=>m===period.slice(2));
   if(/^\d{4}$/.test(period)) return months.filter(m=>m.startsWith(period));
   return months;
 }
@@ -732,9 +737,10 @@ function agg(){
 function viewOverview(){
   const a=agg();
   const saldo=a.um-a.ein-a.kos;
-  const lg=lager();
+  const lg=lager();  // Momentaufnahme, immer über die gesamte Historie (für Warenwert Lager)
   const stockVal=lg.reduce((s,o)=>s+Math.max(0,o.stockVal),0);
-  const realMargin=lg.reduce((s,o)=>s+o.margin,0);
+  const lgPeriod=period==='all'?lg:lager(inPeriod);  // Verkäufe im gewählten Zeitraum (für Marge/Top-Sets)
+  const realMargin=lgPeriod.reduce((s,o)=>s+o.margin,0);
   const netAus=rows('warenausgang').filter(inPeriod).reduce((s,r)=>s+num(r.net),0);
   const fees=rows('warenausgang').filter(inPeriod).reduce((s,r)=>s+num(r.fees)+num(r.porto),0);
 
@@ -744,7 +750,7 @@ function viewOverview(){
   const catList=Object.entries(cats).sort((x,y)=>y[1].um-x[1].um);
   const catMax=Math.max(1,...catList.map(c=>c[1].um));
 
-  const topSets=lg.filter(o=>o.sellQty>0).sort((x,y)=>y.margin-x.margin).slice(0,6);
+  const topSets=lgPeriod.filter(o=>o.sellQty>0).sort((x,y)=>y.margin-x.margin).slice(0,6);
 
   return `
   <div class="phead">
@@ -845,11 +851,13 @@ function viewOverview(){
   </div>`;
 }
 function periodOpts(){
-  const yrs=[...new Set(periodMonthsAll().map(m=>m.slice(0,4)))].sort().reverse();
+  const months=periodMonthsAll();
+  const yrs=[...new Set(months.map(m=>m.slice(0,4)))].sort().reverse();
   return `<option value="all"${period==='all'?' selected':''}>Gesamter Zeitraum</option>
     ${yrs.map(y=>`<option value="${y}"${period===y?' selected':''}>Jahr ${y}</option>`).join('')}
     <option value="6m"${period==='6m'?' selected':''}>Letzte 6 Monate</option>
-    <option value="3m"${period==='3m'?' selected':''}>Letzte 3 Monate</option>`;
+    <option value="3m"${period==='3m'?' selected':''}>Letzte 3 Monate</option>
+    ${months.slice().reverse().map(m=>`<option value="m:${m}"${period==='m:'+m?' selected':''}>${monthName(m)}</option>`).join('')}`;
 }
 function periodMonthsAll(){ return allMonths(); }
 
