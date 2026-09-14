@@ -172,7 +172,7 @@ thead th[aria-sort] .ar{opacity:1;color:var(--gold)}
 tbody td{padding:9px 12px;border-bottom:1px solid var(--line-soft);white-space:nowrap}
 tbody tr:last-child td{border-bottom:none}
 tbody tr:hover{background:var(--surface-2)}
-td.wrap{white-space:normal;min-width:150px;max-width:280px}
+td.cell-wrap{white-space:normal;min-width:150px;max-width:280px}
 .chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;
   background:var(--surface-2);border:1px solid var(--line);color:var(--ink-soft)}
 .chip.c-pk{background:var(--gold-bg);border-color:var(--gold-soft);color:var(--gold)}
@@ -367,10 +367,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20260914c"></script>
-<script src="seed.enc.js?b=20260914c"></script>
+<script src="sync.config.js?b=20260914d"></script>
+<script src="seed.enc.js?b=20260914d"></script>
 <script>
-const BUILD='2026-09-14c';
+const BUILD='2026-09-14d';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -1024,7 +1024,7 @@ function rowHTML(L,r,cols){
     if(t==='n'){ const nn=num(v);
       const money=['ek','ship','gross','price','cust','fees','porto','net','total'].includes(k);
       return `<td class="num">${k==='qty'?N0(nn):(nn?N2(nn):'—')}</td>`; }
-    if(t==='w')return `<td class="wrap">${esc(v||'—')}</td>`;
+    if(t==='w')return `<td class="cell-wrap">${esc(v||'—')}</td>`;
     return `<td>${esc(v||'—')}</td>`;
   }).join('')}
   <td><div class="rowact">
