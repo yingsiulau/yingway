@@ -95,6 +95,10 @@ main{padding:0;min-width:0}
 .topbar-brand{font-family:"Fraunces",Georgia,serif;font-size:15.5px;font-weight:600;
   display:flex;align-items:center;gap:8px;letter-spacing:-.02em;color:var(--ink)}
 .wrap{max-width:1180px;margin:0 auto;padding:26px 32px 80px}
+/* Tabellen-Ansichten (alles ausser Übersicht) dürfen auf breiten Bildschirmen
+   mehr Platz nutzen als die 1180px Lesebreite des Dashboards – weniger
+   horizontales Scrollen in den Tabellen */
+.wrap.wrap-wide{max-width:1600px}
 .phead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;
   flex-wrap:wrap;margin-bottom:22px}
 .phead h1{font-size:26px}
@@ -175,13 +179,15 @@ select{appearance:none;padding-right:26px;
   overflow-x:auto}
 table{border-collapse:collapse;width:100%;font-size:12.5px}
 thead th{position:sticky;top:0;background:var(--surface-2);text-align:left;
-  padding:10px 12px;font-weight:600;color:var(--muted);font-size:11px;
+  padding:10px 8px;font-weight:600;color:var(--muted);font-size:11px;
   text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--line);
   white-space:nowrap;cursor:pointer;user-select:none}
+thead th:first-child,tbody td:first-child,tfoot td:first-child{padding-left:12px}
+thead th:last-child,tbody td:last-child,tfoot td:last-child{padding-right:12px}
 thead th.n{text-align:right}
 thead th .ar{opacity:.4;margin-left:3px}
 thead th[aria-sort] .ar{opacity:1;color:var(--gold)}
-tbody td{padding:9px 12px;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+tbody td{padding:9px 8px;border-bottom:1px solid var(--line-soft);white-space:nowrap}
 tbody tr:last-child td{border-bottom:none}
 tbody tr:hover{background:var(--surface-2)}
 td.cell-wrap{white-space:normal;min-width:150px;max-width:280px}
@@ -194,7 +200,7 @@ tr:hover .rowact{opacity:1}
   width:26px;height:26px;display:grid;place-items:center;padding:0;color:var(--muted)}
 .rowact button:hover{border-color:var(--gold-soft);color:var(--ink)}
 .rowact svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.7}
-tfoot td{padding:10px 12px;font-weight:600;border-top:2px solid var(--line);
+tfoot td{padding:10px 8px;font-weight:600;border-top:2px solid var(--line);
   background:var(--surface-2)}
 /* erste Spalte (Datum/SKU) und letzte Spalte (Aktionen bzw. Marge %) beim horizontalen
    Scrollen angeheftet, damit man z.B. auf einem Laptop nicht erst nach rechts scrollen
@@ -395,10 +401,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20260914f"></script>
-<script src="seed.enc.js?b=20260914f"></script>
+<script src="sync.config.js?b=20260914g"></script>
+<script src="seed.enc.js?b=20260914g"></script>
 <script>
-const BUILD='2026-09-14f';
+const BUILD='2026-09-14g';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -755,6 +761,7 @@ function draw(){
   renderNav();
   const v=$('#view');
   if(!LEDGERS.every(L=>ready[L])){ v.innerHTML=`<div class="empty">Lade Daten…</div>`; return; }
+  v.classList.toggle('wrap-wide', route!=='overview');
   if(route==='overview') v.innerHTML=viewOverview();
   else if(route==='lager') v.innerHTML=viewLager();
   else v.innerHTML=viewLedger(route);
