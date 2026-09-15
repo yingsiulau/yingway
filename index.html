@@ -402,10 +402,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20260915b"></script>
-<script src="seed.enc.js?b=20260915b"></script>
+<script src="sync.config.js?b=20260915c"></script>
+<script src="seed.enc.js?b=20260915c"></script>
 <script>
-const BUILD='2026-09-15b';
+const BUILD='2026-09-15c';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -416,6 +416,7 @@ const DDE=d=>{ if(!d)return'—'; const p=String(d).slice(0,10).split('-'); retu
 const YM=d=>String(d||'').slice(0,7);
 const monthName=ym=>{ const [y,m]=ym.split('-'); return ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'][+m-1]+' '+y.slice(2); };
 const num=v=>{ const n=parseFloat(String(v).replace(',','.')); return isFinite(n)?n:0; };
+const roundRappen=v=>Math.round(v/0.05)*0.05;   // Schweizer Rundung auf 5 Rappen
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 const LEDGERS=['wareneingang','warenausgang','laufende_kosten'];
@@ -1273,6 +1274,7 @@ function openForm(L,row){
       if(el&&!el.value)el.value=hit[k]||''; }); updateCalc(); }
   };
   let feesTouched=!isNew; // bei bestehenden Einträgen nichts automatisch überschreiben
+  let netTouched=false;   // Netto folgt der Formel, bis man selbst reintippt
 
   // "Gebührenfrei" / "Sammelversand": Häkchen setzt das Feld auf 0 und trägt
   // den Grund in die Bemerkung ein (als eigenes, kommagetrenntes Stichwort).
@@ -1315,9 +1317,10 @@ function openForm(L,row){
   form.oninput=(e)=>{
     if(L==='warenausgang' && e.target){
       if(e.target.name==='fees') feesTouched=true;
+      if(e.target.name==='net') netTouched=true;
       if(e.target.name==='price' && !feesTouched){
         const feesEl=form.querySelector('[name=fees]'); const priceVal=num(e.target.value);
-        if(feesEl) feesEl.value = priceVal ? (priceVal*0.10).toFixed(2) : '';
+        if(feesEl) feesEl.value = priceVal ? roundRappen(priceVal*0.10).toFixed(2) : '';
       }
     }
     updateCalc();
@@ -1330,16 +1333,18 @@ function openForm(L,row){
       const auto=g('ek')+g('ship');
       box.innerHTML=`<span>Vorschlag Brutto = EK + Versand</span>
         <span><b>${CHF(auto)}</b> <button type="button" class="linkbtn" id="applyCalc">übernehmen</button></span>`;
+      const ap=$('#applyCalc'); if(ap)ap.onclick=()=>{
+        form.querySelector('[name=gross]').value=(g('ek')+g('ship')).toFixed(2);
+      };
     }else{
       const auto=g('price')+g('cust')-g('fees')-g('porto');
+      if(!netTouched){
+        const netEl=form.querySelector('[name=net]');
+        if(netEl && document.activeElement!==netEl) netEl.value=auto.toFixed(2);
+      }
       box.innerHTML=`<span>Netto = Verkauf + Kd-Versand − Gebühren − Porto</span>
-        <span><b>${CHF(auto)}</b> <button type="button" class="linkbtn" id="applyCalc">übernehmen</button></span>`;
+        <span><b>${CHF(auto)}</b></span>`;
     }
-    const ap=$('#applyCalc'); if(ap)ap.onclick=()=>{
-      const t=L==='wareneingang'?'gross':'net';
-      const g2=k=>num(form.querySelector(`[name=${k}]`)?.value);
-      form.querySelector(`[name=${t}]`).value=(L==='wareneingang'?g2('ek')+g2('ship'):g2('price')+g2('cust')-g2('fees')-g2('porto')).toFixed(2);
-    };
   }
 
   $('#cancelBtn').onclick=closeForm;
