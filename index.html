@@ -254,6 +254,7 @@ thead th:first-child,thead th:last-child{z-index:4}
 .fghint{font-size:11px;color:var(--faint);line-height:1.5;margin:0}
 .chk{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-soft)}
 .chk input{width:auto}
+.fg-chk{margin-top:7px}
 .pdfdrop{display:flex;align-items:center;gap:8px;justify-content:center;padding:13px;
   border:1px dashed var(--line);border-radius:9px;color:var(--muted);font-size:12.5px;
   cursor:pointer;width:100%}
@@ -401,10 +402,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20260915a"></script>
-<script src="seed.enc.js?b=20260915a"></script>
+<script src="sync.config.js?b=20260915b"></script>
+<script src="seed.enc.js?b=20260915b"></script>
 <script>
-const BUILD='2026-09-15a';
+const BUILD='2026-09-15b';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -1245,7 +1246,10 @@ function openForm(L,row){
       input=`<input type="text" name="${k}" value="${esc(val(k))}" list="dl_${k}" autocomplete="off">
         <datalist id="dl_${k}">${(lists[src]||[]).map(o=>`<option value="${esc(o)}">`).join('')}</datalist>`; }
     else input=`<input type="text" name="${k}" value="${esc(val(k))}" ${k==='bem'?'placeholder="z. B. Sammelversand, ausserhalb Ricardo verkauft"':''}>`;
-    return `<div class="fg" data-k="${k}"><label>${lbl}</label>${input}</div>`;
+    let extra='';
+    if(L==='warenausgang'&&k==='fees')extra=`<label class="chk fg-chk"><input type="checkbox" id="cbFeesFree">Gebührenfrei</label>`;
+    if(L==='warenausgang'&&k==='porto')extra=`<label class="chk fg-chk"><input type="checkbox" id="cbBulk">Sammelversand</label>`;
+    return `<div class="fg" data-k="${k}"><label>${lbl}</label>${input}${extra}</div>`;
   });
 
   // group number pairs
@@ -1269,6 +1273,45 @@ function openForm(L,row){
       if(el&&!el.value)el.value=hit[k]||''; }); updateCalc(); }
   };
   let feesTouched=!isNew; // bei bestehenden Einträgen nichts automatisch überschreiben
+
+  // "Gebührenfrei" / "Sammelversand": Häkchen setzt das Feld auf 0 und trägt
+  // den Grund in die Bemerkung ein (als eigenes, kommagetrenntes Stichwort).
+  function setBemToken(token,on){
+    const bemEl=form.querySelector('[name=bem]'); if(!bemEl)return;
+    let parts=bemEl.value.split(',').map(s=>s.trim()).filter(Boolean);
+    parts=parts.filter(p=>p.toLowerCase()!==token.toLowerCase());
+    if(on)parts.push(token);
+    bemEl.value=parts.join(', ');
+  }
+  function hasBemToken(token){
+    return (val('bem')||'').split(',').map(s=>s.trim().toLowerCase()).includes(token.toLowerCase());
+  }
+  const cbFees=form.querySelector('#cbFeesFree');
+  if(cbFees){
+    const feesEl=form.querySelector('[name=fees]');
+    cbFees.checked=hasBemToken('Gebührenfrei');
+    if(cbFees.checked){ feesEl.value='0'; feesEl.disabled=true; feesTouched=true; }
+    cbFees.onchange=()=>{
+      feesEl.disabled=cbFees.checked;
+      if(cbFees.checked)feesEl.value='0';
+      feesTouched=true;
+      setBemToken('Gebührenfrei',cbFees.checked);
+      updateCalc();
+    };
+  }
+  const cbBulk=form.querySelector('#cbBulk');
+  if(cbBulk){
+    const portoEl=form.querySelector('[name=porto]');
+    cbBulk.checked=hasBemToken('Sammelversand');
+    if(cbBulk.checked){ portoEl.value='0'; portoEl.disabled=true; }
+    cbBulk.onchange=()=>{
+      portoEl.disabled=cbBulk.checked;
+      if(cbBulk.checked)portoEl.value='0';
+      setBemToken('Sammelversand',cbBulk.checked);
+      updateCalc();
+    };
+  }
+
   form.oninput=(e)=>{
     if(L==='warenausgang' && e.target){
       if(e.target.name==='fees') feesTouched=true;
