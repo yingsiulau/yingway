@@ -401,10 +401,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20260914g"></script>
-<script src="seed.enc.js?b=20260914g"></script>
+<script src="sync.config.js?b=20260915a"></script>
+<script src="seed.enc.js?b=20260915a"></script>
 <script>
-const BUILD='2026-09-14g';
+const BUILD='2026-09-15a';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -1360,7 +1360,11 @@ async function submitForm(){
     if(pendingRemove && rec.pdf){ await deleteReceipt(L,rec.id); delete rec.pdf; }
     if(pendingFile){ await uploadReceipt(L,rec.id,pendingFile);
       rec.pdf={name:pendingFile.name,size:pendingFile.size,at:new Date().toISOString()}; }
-    await saveRow(L,rec,oldYm); toast(row?'Gespeichert':'Eintrag angelegt'); closeForm(); draw();
+    await saveRow(L,rec,oldYm); toast(row?'Gespeichert':'Eintrag angelegt'); closeForm();
+    if(!row) page=0;   // neuer Eintrag: erste Seite zeigen …
+    draw();
+    if(!row){ const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+      window.scrollTo({top:0,behavior:reduced?'auto':'smooth'}); }  // … und dorthin scrollen
   }catch(e){
     toast(e.message==='no-sync'?'Beleg braucht aktiven Sync':e.message==='too-big'?'PDF zu gross (max. 15 MB)':'Fehler beim Speichern');
     btn.textContent=row?'Speichern':'Anlegen'; btn.disabled=false;
