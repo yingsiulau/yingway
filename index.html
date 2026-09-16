@@ -402,10 +402,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20260915c"></script>
-<script src="seed.enc.js?b=20260915c"></script>
+<script src="sync.config.js?b=20260916a"></script>
+<script src="seed.enc.js?b=20260916a"></script>
 <script>
-const BUILD='2026-09-15c';
+const BUILD='2026-09-16a';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -1241,7 +1241,7 @@ function openForm(L,row){
   const fields=FORMS[L].map(([k,lbl,type])=>{
     let input;
     if(type==='date')input=`<input type="date" name="${k}" value="${esc(val(k))}">`;
-    else if(type==='num')input=`<input type="number" step="0.01" name="${k}" value="${esc(val(k))}" ${k==='qty'?'min="0"':''}>`;
+    else if(type==='num')input=`<input type="text" inputmode="decimal" autocomplete="off" name="${k}" value="${esc(val(k))}">`;
     else if(type.startsWith('select:'))input=`<select name="${k}">${KOST_KAT.map(c=>`<option ${val(k)===c?'selected':''}>${c}</option>`).join('')}${val(k)&&!KOST_KAT.includes(val(k))?`<option selected>${esc(val(k))}</option>`:''}</select>`;
     else if(type.startsWith('datalist:')){ const src=type.split(':')[1];
       input=`<input type="text" name="${k}" value="${esc(val(k))}" list="dl_${k}" autocomplete="off">
@@ -1275,6 +1275,18 @@ function openForm(L,row){
   };
   let feesTouched=!isNew; // bei bestehenden Einträgen nichts automatisch überschreiben
   let netTouched=false;   // Netto folgt der Formel, bis man selbst reintippt
+  let grossTouched=false; // dito für Brutto bei Eingängen
+
+  // Zahlenfelder sind bewusst type=text statt type=number: number-Inputs zeigen
+  // je nach Betriebssystem-Gebietsschema unterschiedliche Dezimaltrennzeichen an
+  // (Komma vs. Punkt) und liefern dann teils leere .value zurück. num() kommt mit
+  // beidem klar; beim Verlassen des Feldes wird sauber auf Punkt + 2 Nachkommastellen normiert.
+  form.addEventListener('focusout',e=>{
+    const t=e.target;
+    if(t.matches&&t.matches('input[inputmode=decimal]')&&t.value.trim()!==''){
+      t.value = t.name==='qty' ? String(num(t.value)) : num(t.value).toFixed(2);
+    }
+  });
 
   // "Gebührenfrei" / "Sammelversand": Häkchen setzt das Feld auf 0 und trägt
   // den Grund in die Bemerkung ein (als eigenes, kommagetrenntes Stichwort).
@@ -1323,6 +1335,7 @@ function openForm(L,row){
         if(feesEl) feesEl.value = priceVal ? roundRappen(priceVal*0.10).toFixed(2) : '';
       }
     }
+    if(L==='wareneingang' && e.target && e.target.name==='gross') grossTouched=true;
     updateCalc();
   };
   updateCalc();
@@ -1331,11 +1344,12 @@ function openForm(L,row){
     const box=$('#calcBox'); if(!box)return;
     if(L==='wareneingang'){
       const auto=g('ek')+g('ship');
-      box.innerHTML=`<span>Vorschlag Brutto = EK + Versand</span>
-        <span><b>${CHF(auto)}</b> <button type="button" class="linkbtn" id="applyCalc">übernehmen</button></span>`;
-      const ap=$('#applyCalc'); if(ap)ap.onclick=()=>{
-        form.querySelector('[name=gross]').value=(g('ek')+g('ship')).toFixed(2);
-      };
+      if(!grossTouched){
+        const grossEl=form.querySelector('[name=gross]');
+        if(grossEl && document.activeElement!==grossEl) grossEl.value=auto.toFixed(2);
+      }
+      box.innerHTML=`<span>Brutto = EK + Versand</span>
+        <span><b>${CHF(auto)}</b></span>`;
     }else{
       const auto=g('price')+g('cust')-g('fees')-g('porto');
       if(!netTouched){
