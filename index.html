@@ -402,10 +402,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20260916a"></script>
-<script src="seed.enc.js?b=20260916a"></script>
+<script src="sync.config.js?b=20260923a"></script>
+<script src="seed.enc.js?b=20260923a"></script>
 <script>
-const BUILD='2026-09-16a';
+const BUILD='2026-09-23a';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -1275,7 +1275,10 @@ function openForm(L,row){
   };
   let feesTouched=!isNew; // bei bestehenden Einträgen nichts automatisch überschreiben
   let netTouched=false;   // Netto folgt der Formel, bis man selbst reintippt
-  let grossTouched=false; // dito für Brutto bei Eingängen
+  // Eingänge: EK Netto ist ein Stückpreis. Standardmässig treiben Menge/EK/Versand
+  // den Brutto-Preis (vorwärts); tippt man direkt in Brutto, dreht sich die Richtung
+  // um und EK Netto wird aus Brutto zurückgerechnet – bis man wieder ins EK-Feld tippt.
+  let bruttoDriven=false;
 
   // Zahlenfelder sind bewusst type=text statt type=number: number-Inputs zeigen
   // je nach Betriebssystem-Gebietsschema unterschiedliche Dezimaltrennzeichen an
@@ -1335,7 +1338,10 @@ function openForm(L,row){
         if(feesEl) feesEl.value = priceVal ? roundRappen(priceVal*0.10).toFixed(2) : '';
       }
     }
-    if(L==='wareneingang' && e.target && e.target.name==='gross') grossTouched=true;
+    if(L==='wareneingang' && e.target){
+      if(e.target.name==='gross') bruttoDriven=true;
+      if(e.target.name==='ek') bruttoDriven=false;
+    }
     updateCalc();
   };
   updateCalc();
@@ -1343,13 +1349,20 @@ function openForm(L,row){
     const g=k=>num(form.querySelector(`[name=${k}]`)?.value);
     const box=$('#calcBox'); if(!box)return;
     if(L==='wareneingang'){
-      const auto=g('ek')+g('ship');
-      if(!grossTouched){
+      const qty=g('qty')||1, ek=g('ek'), ship=g('ship'), gross=g('gross');
+      if(bruttoDriven){
+        const ekEl=form.querySelector('[name=ek]');
+        const ekAuto=(gross-ship)/qty;
+        if(ekEl && document.activeElement!==ekEl) ekEl.value=ekAuto.toFixed(2);
+        box.innerHTML=`<span>EK Netto = (Brutto − Versand) / Menge</span>
+          <span><b>${CHF(ekAuto)}</b></span>`;
+      }else{
+        const auto=qty*ek+ship;
         const grossEl=form.querySelector('[name=gross]');
         if(grossEl && document.activeElement!==grossEl) grossEl.value=auto.toFixed(2);
+        box.innerHTML=`<span>Brutto = Menge × EK + Versand</span>
+          <span><b>${CHF(auto)}</b></span>`;
       }
-      box.innerHTML=`<span>Brutto = EK + Versand</span>
-        <span><b>${CHF(auto)}</b></span>`;
     }else{
       const auto=g('price')+g('cust')-g('fees')-g('porto');
       if(!netTouched){
@@ -1415,7 +1428,7 @@ async function submitForm(){
   if(!rec.d){ toast('Bitte Datum angeben'); return; }
   // auto net/gross if empty
   if(L==='warenausgang'&&!num(fd.get('net')))rec.net=+(num(rec.price)+num(rec.cust)-num(rec.fees)-num(rec.porto)).toFixed(2);
-  if(L==='wareneingang'&&!num(fd.get('gross')))rec.gross=+(num(rec.ek)+num(rec.ship)).toFixed(2);
+  if(L==='wareneingang'&&!num(fd.get('gross')))rec.gross=+((num(rec.qty)||1)*num(rec.ek)+num(rec.ship)).toFixed(2);
   delete rec._ym;
   const btn=$('#saveBtn'); btn.textContent='…'; btn.disabled=true;
   try{
