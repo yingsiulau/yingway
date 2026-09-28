@@ -402,10 +402,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20260923a"></script>
-<script src="seed.enc.js?b=20260923a"></script>
+<script src="sync.config.js?b=20260928a"></script>
+<script src="seed.enc.js?b=20260928a"></script>
 <script>
-const BUILD='2026-09-23a';
+const BUILD='2026-09-28a';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -1219,7 +1219,7 @@ const FORMS={
     ['shop','Laden / Plattform','datalist:shop'],['person','Käufer','text'],
     ['bem','Bemerkung','text'] ],
   laufende_kosten:[
-    ['d','Datum','date'],['cat','Kategorie','select:kost'],['desc','Beschreibung','text'],
+    ['d','Datum','date'],['cat','Kategorie','datalist:kostcat'],['desc','Beschreibung','text'],
     ['qty','Menge','num'],['total','Gesamtpreis','num'],['shop','Laden','datalist:shop'],
     ['receipt','Beleg-Nummer','text'] ],
 };
@@ -1235,7 +1235,10 @@ function openForm(L,row){
   const catAll=[...new Set([...rows('wareneingang'),...rows('warenausgang')].map(r=>r.cat).filter(Boolean))].sort();
   const formAll=[...new Set([...rows('wareneingang'),...rows('warenausgang')].map(r=>r.form).filter(Boolean))].sort();
   const shopAll=[...new Set(LEDGERS.flatMap(x=>rows(x)).map(r=>r.shop).filter(Boolean))].sort();
-  const lists={sku:skuAll,cat:catAll,form:formAll,shop:shopAll};
+  // Kostenkategorien: Standardliste + alles, was bereits verwendet wurde – neue Kategorien
+  // einfach eintippen, sie erscheinen danach automatisch als Vorschlag
+  const kostcatAll=[...new Set([...KOST_KAT,...rows('laufende_kosten').map(r=>r.cat).filter(Boolean)])].sort((a,b)=>a.localeCompare(b,'de'));
+  const lists={sku:skuAll,cat:catAll,form:formAll,shop:shopAll,kostcat:kostcatAll};
 
   const val=k=>row?row[k]??'':(k==='d'?new Date().toISOString().slice(0,10):(k==='qty'?1:''));
   const fields=FORMS[L].map(([k,lbl,type])=>{
@@ -1244,7 +1247,7 @@ function openForm(L,row){
     else if(type==='num')input=`<input type="text" inputmode="decimal" autocomplete="off" name="${k}" value="${esc(val(k))}">`;
     else if(type.startsWith('select:'))input=`<select name="${k}">${KOST_KAT.map(c=>`<option ${val(k)===c?'selected':''}>${c}</option>`).join('')}${val(k)&&!KOST_KAT.includes(val(k))?`<option selected>${esc(val(k))}</option>`:''}</select>`;
     else if(type.startsWith('datalist:')){ const src=type.split(':')[1];
-      input=`<input type="text" name="${k}" value="${esc(val(k))}" list="dl_${k}" autocomplete="off">
+      input=`<input type="text" name="${k}" value="${esc(val(k))}" list="dl_${k}" autocomplete="off" ${src==='kostcat'?'placeholder="wählen oder neue Kategorie eintippen"':''}>
         <datalist id="dl_${k}">${(lists[src]||[]).map(o=>`<option value="${esc(o)}">`).join('')}</datalist>`; }
     else input=`<input type="text" name="${k}" value="${esc(val(k))}" ${k==='bem'?'placeholder="z. B. Sammelversand, ausserhalb Ricardo verkauft"':''}>`;
     let extra='';
