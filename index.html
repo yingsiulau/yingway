@@ -156,6 +156,9 @@ main{padding:0;min-width:0}
   overflow:hidden;display:flex}
 .bd-row .fill{background:var(--gold-soft);height:100%}
 .bd-row .mv{font-size:12px}
+.bd-head{margin:16px 0 10px;padding-top:12px;border-top:1px solid var(--line-soft);
+  font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.bd-scroll{max-height:440px;overflow-y:auto;padding-right:8px;scrollbar-width:thin}
 
 /* ---------- toolbar ---------- */
 .toolbar{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
@@ -402,10 +405,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20260928a"></script>
-<script src="seed.enc.js?b=20260928a"></script>
+<script src="sync.config.js?b=20261013a"></script>
+<script src="seed.enc.js?b=20261013a"></script>
 <script>
-const BUILD='2026-09-28a';
+const BUILD='2026-10-13a';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -797,7 +800,7 @@ function viewOverview(){
   const catList=Object.entries(cats).sort((x,y)=>y[1].um-x[1].um);
   const catMax=Math.max(1,...catList.map(c=>c[1].um));
 
-  const topSets=lgPeriod.filter(o=>o.sellQty>0).sort((x,y)=>y.margin-x.margin).slice(0,6);
+  const topSets=lgPeriod.filter(o=>o.sellQty>0).sort((x,y)=>y.margin-x.margin);
 
   return `
   <div class="phead">
@@ -844,7 +847,8 @@ function viewOverview(){
           <span class="v ${realMargin>=0?'pos':'neg'}">${CHF(realMargin)}</span>
           <span class="sub">${netAus?PCT(realMargin/netAus):'—'} Marge</span></div>
       </div>
-      <div style="margin-top:14px" class="bd">
+      <div class="bd-head">${topSets.length} verkaufte Position${topSets.length===1?'':'en'} · nach Rohertrag sortiert</div>
+      <div class="bd bd-scroll">
         ${topSets.map(o=>`<div class="bd-row">
           <span class="nm">${esc(o.sku)}</span>
           <span class="mv ${o.margin>=0?'pos':'neg'}">${CHF(o.margin)} · ${PCT(o.marginPct)}</span>
