@@ -13,3 +13,12 @@ id = "5fb396d04a8b429eb0f19f21b9d94b80"
 [[r2_buckets]]
 binding = "FILES"
 bucket_name = "yingway-files"
+
+# News-Monitor (wog.ch): alle 10 Minuten prüfen.
+[triggers]
+crons = ["*/10 * * * *"]
+
+# Mail-Empfänger (kommagetrennt). Mit Resend ohne eigene Domain muss das die
+# Adresse sein, mit der das Resend-Konto angelegt wurde. Absender optional via NEWS_FROM.
+[vars]
+NEWS_TO = "yingsiulau@gmail.com"

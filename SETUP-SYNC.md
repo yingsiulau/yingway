@@ -98,6 +98,37 @@ gesammelten ZIP-Export nach Journal + Zeitraum.
 
 ---
 
+## News & Mail (wog.ch-Monitor, optional)
+
+Der Worker prüft alle 10 Minuten die „Neuheiten“ (Trading-Cards) von wog.ch,
+behält Pokémon / One Piece / Dragon Ball, merkt sich gesehene Produkte und
+schickt bei neuen **eine Mail** (Name, Preis, Verfügbarkeit, Link). Im Menü
+gibt es dazu die Seite **News** (auch direkt via `…/yingway/#news`).
+Der erste Lauf markiert alles Vorhandene still als „gesehen“ – keine Mail-Flut.
+
+Das Dashboard läuft schon nach `wrangler deploy` (der Cron ist in
+`wrangler.toml` eingetragen). Für die **Mails** braucht es einmalig einen
+Mail-API-Dienst (Resend, gratis: 100 Mails/Tag):
+
+1. Konto auf https://resend.com anlegen (mit derselben Adresse wie in
+   `NEWS_TO` in `worker/wrangler.toml` – ohne eigene Domain darf Resend nur an
+   die Konto-Adresse senden).
+2. Unter *API Keys* einen Key erstellen und im Worker hinterlegen:
+
+   ```bash
+   cd /Users/ylau/Yingway/worker
+   wrangler secret put RESEND_API_KEY     # Key einfügen, Enter
+   wrangler deploy
+   ```
+3. In der App → **News** → **Testmail** (zeigt „Mail aktiv“, sobald das Secret da ist).
+
+Weitere Empfänger: `NEWS_TO = "a@x.ch,b@y.ch"` (nur mit verifizierter Domain
+bei Resend, dann auch `NEWS_FROM` setzen). Die Filter-Stichwörter stehen oben in
+`worker/worker.js` (`NEWS_FILTER`). Abfrage-Rücksicht: eine Anfrage / 10 Min.,
+ehrlicher User-Agent, nicht die in der robots.txt gesperrten Seiten.
+
+---
+
 ## Sicherheit & Grenzen
 
 - **Ende-zu-Ende verschlüsselt**: der Worker speichert nur AES-256-GCM-Chiffretext.

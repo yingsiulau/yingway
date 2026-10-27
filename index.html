@@ -405,10 +405,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20261027a"></script>
-<script src="seed.enc.js?b=20261027a"></script>
+<script src="sync.config.js?b=20261027b"></script>
+<script src="seed.enc.js?b=20261027b"></script>
 <script>
-const BUILD='2026-10-27a';
+const BUILD='2026-10-27b';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -432,6 +432,7 @@ const VKEY='yingway.vault.v1';
 const RKEY='yingway.rev.v1';
 const SYNC=(typeof window.__SYNC_URL__==='string'?window.__SYNC_URL__:'').trim();
 const FILES_BASE=SYNC?SYNC.replace(/\/vault\/?$/,'/files'):'';
+const NEWS_BASE=SYNC?SYNC.replace(/\/vault\/?$/,'/news'):'';
 const store={wareneingang:[],warenausgang:[],laufende_kosten:[]};
 let ready={wareneingang:false,warenausgang:false,laufende_kosten:false};
 let session=null;         // {key:CryptoKey, salt:Uint8Array, pass:string}
@@ -725,6 +726,7 @@ const NAV=[
   ['warenausgang','Ausgänge','M12 19V5M5 12l7-7 7 7'],
   ['laufende_kosten','Laufende Kosten','M3 6h18M3 12h18M3 18h12'],
   ['lager','Lager','M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7'],
+  ['news','News','M4 5h13a2 2 0 012 2v12H6a2 2 0 01-2-2V5zM19 9h2v8a2 2 0 01-2 2M8 9h7M8 13h7'],
 ];
 function renderNav(){
   $('#nav').innerHTML=NAV.map(([id,label,d])=>{
@@ -733,6 +735,7 @@ function renderNav(){
     if(id==='warenausgang')badge=rows('warenausgang').length;
     if(id==='laufende_kosten')badge=rows('laufende_kosten').length;
     if(id==='lager')badge=lager().length;
+    if(id==='news'&&news.data){ const n=newsFresh().length; badge=n?n:''; }
     return `<button class="navlink" data-r="${id}" ${route===id?'aria-current="page"':''}>
       <svg viewBox="0 0 24 24"><path d="${d}"/></svg>${label}
       ${badge!==''?`<span class="badge">${badge}</span>`:''}</button>`;
@@ -745,6 +748,7 @@ function go(r){
   state.sort=r==='lager'?{k:'margin',dir:-1}:{k:'d',dir:-1};
   closeForm();
   closeDrawer();
+  try{ history.replaceState(null,'','#'+(r==='overview'?'':r)); }catch(e){}
   draw();
 }
 
@@ -769,9 +773,11 @@ function draw(){
   v.classList.toggle('wrap-wide', route!=='overview');
   if(route==='overview') v.innerHTML=viewOverview();
   else if(route==='lager') v.innerHTML=viewLager();
+  else if(route==='news') v.innerHTML=viewNews();
   else v.innerHTML=viewLedger(route);
   wire();
   if(route==='overview') drawChart();
+  if(route==='news') wireNews();
 }
 
 /* ---------- Overview ---------- */
@@ -1153,6 +1159,88 @@ function viewLager(){
   <p class="chart-hint" style="margin-top:10px">Ø EK/Stk = gesamte Einkaufskosten (brutto) einer SKU geteilt durch die gesamte eingekaufte Menge.
   Warenwert und Rohertrag verwenden diesen Durchschnitt. Bei negativem Bestand stimmen Ein- oder Ausgänge nicht überein.</p>`;
 }
+
+/* ---------- News (wog.ch-Monitor, läuft im Worker) ---------- */
+const news={data:null,loading:false,err:'',fr:'',q:''};
+const NEWS_FR=[['','Alle'],['Pokémon',/pok[eé]mon/i],['One Piece',/one\s*piece/i],['Dragon Ball',/dragon\s*ball/i]];
+const newsFr=t=>(NEWS_FR.slice(1).find(([,re])=>re.test(t))||[''])[0];
+const NEWS_DOT={'circle-green':'var(--pos)','circle-blue':'#4a7fc1','circle-yellow':'#c9a227','circle-grey':'var(--faint)'};
+// "NEU" = nach dem ersten Lauf entdeckt und noch keine 24 h alt
+const newsFresh=()=>((news.data&&news.data.items)||[]).filter(it=>it.n&&Date.now()-Date.parse(it.f)<864e5);
+function ago(iso){
+  const m=Math.round((Date.now()-Date.parse(iso))/6e4);
+  if(!(m>=0)) return '';
+  if(m<1) return 'gerade eben';
+  if(m<60) return `vor ${m} Min.`;
+  if(m<1440) return `vor ${Math.round(m/60)} Std.`;
+  return new Date(iso).toLocaleDateString('de-CH',{day:'2-digit',month:'2-digit'})+' '+new Date(iso).toLocaleTimeString('de-CH',{hour:'2-digit',minute:'2-digit'});
+}
+async function newsCall(path,method){
+  const r=await fetch(NEWS_BASE+path,{method:method||'GET',cache:'no-store',headers:{Authorization:'Bearer '+await filesTok()}});
+  const j=await r.json().catch(()=>null);
+  if(!r.ok) throw new Error((j&&j.error)||(r.status===404?'Worker kennt /news noch nicht – bitte neu deployen (wrangler deploy)':'Fehler '+r.status));
+  return j;
+}
+async function loadNews(path,method){
+  if(!NEWS_BASE||news.loading) return;
+  news.loading=true; if(route==='news') draw();
+  try{ const j=await newsCall(path||'',method); news.data=j; news.err=''; }
+  catch(e){ news.err=e.message||'Fehler'; }
+  news.loading=false; renderNav(); if(route==='news') draw();
+}
+function viewNews(){
+  if(!NEWS_BASE) return `<div class="phead"><div><h1>News</h1></div></div>
+    <div class="empty">Die News brauchen die Cloud-Synchronisation (Worker). Siehe SETUP-SYNC.md.</div>`;
+  const d=news.data;
+  if(!d&&!news.err) setTimeout(()=>loadNews(),0);
+  if(d&&!d.lastCheck&&!news.auto){ news.auto=true; setTimeout(()=>loadNews('/check','POST'),0); } // Cron noch nie gelaufen
+  const all=(d&&d.items)||[];
+  const q=news.q.toLowerCase();
+  const f=all.filter(it=>(!news.fr||newsFr(it.t)===news.fr)&&(!q||it.t.toLowerCase().includes(q)));
+  const status=d?`Zuletzt geprüft ${d.lastOk?ago(d.lastOk):'noch nie'} · alle 10 Min. · Mail ${d.mail?'<b class="pos">aktiv</b>':'<b class="neg">nicht eingerichtet</b>'}`:'';
+  return `
+  <div class="phead">
+    <div><h1>News</h1><p>Neue Trading-Cards bei wog.ch · Pokémon, One Piece, Dragon Ball · neueste zuerst</p></div>
+    <div class="toolbar" style="margin:0">
+      <button class="btn ghost sm" id="nCheck" ${news.loading?'disabled':''}><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7"/></svg>${news.loading?'Prüfe…':'Jetzt prüfen'}</button>
+      ${d&&d.mail?`<button class="btn ghost sm" id="nTest"><svg viewBox="0 0 24 24"><path d="M3 6h18v12H3zM3 7l9 7 9-7"/></svg>Testmail</button>`:''}
+    </div>
+  </div>
+  ${news.err?`<div class="banner warn"><span><b>News nicht erreichbar:</b> ${esc(news.err)}</span></div>`:''}
+  ${d&&d.lastError?`<div class="banner warn"><span><b>Letzter Lauf mit Fehler:</b> ${esc(d.lastError)}</span></div>`:''}
+  ${d&&!d.mail?`<div class="banner"><span>Mail-Benachrichtigung ist noch nicht eingerichtet – das Dashboard funktioniert trotzdem. Anleitung: <b>SETUP-SYNC.md → News &amp; Mail</b>.</span></div>`:''}
+  <div class="toolbar">
+    <div class="field"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+      <input type="search" id="nQ" placeholder="Produkt suchen…" value="${esc(news.q)}"></div>
+    <select id="nFr">${NEWS_FR.map(([k,l])=>{const v=k,lab=k?k:l;return `<option value="${esc(v)}" ${news.fr===v?'selected':''}>${esc(k?lab:'Alle Franchises')}</option>`;}).join('')}</select>
+    <span class="count" style="margin-left:auto">${status}</span>
+  </div>
+  ${d?`<div class="tbl-wrap"><table>
+    <thead><tr><th>Produkt</th><th class="n">Preis</th><th>Verfügbarkeit</th><th>Erscheint</th><th>Entdeckt</th><th></th></tr></thead>
+    <tbody>${f.map(it=>`<tr>
+      <td class="cell-wrap" style="min-width:260px"><div style="display:flex;align-items:center;gap:10px">
+        ${it.i?`<img src="${esc(it.i)}" alt="" loading="lazy" style="width:36px;height:36px;object-fit:contain;border-radius:6px;flex:none;background:#fff;padding:2px">`:''}
+        <div><a href="${esc(it.u)}" target="_blank" rel="noopener" style="color:var(--ink);font-weight:500;text-decoration:none">${esc(it.t)}</a>
+          <div style="margin-top:2px"><span class="chip ${newsFr(it.t)==='Pokémon'?'c-pk':''}">${esc(newsFr(it.t)||'—')}</span>
+          ${it.n&&Date.now()-Date.parse(it.f)<864e5?' <span class="chip c-pk">NEU</span>':''}</div></div></div></td>
+      <td class="num">${it.p==null?'<span class="count">folgt</span>':CHF(it.p)}</td>
+      <td><span class="tag-dot" style="background:${NEWS_DOT[it.c]||'var(--faint)'}"></span>${esc(it.s)}</td>
+      <td>${esc(it.r||'—')}</td>
+      <td>${it.n?esc(ago(it.f)):'<span class="count">bei Start</span>'}</td>
+      <td><a class="btn ghost sm" href="${esc(it.u)}" target="_blank" rel="noopener">Öffnen ↗</a></td>
+    </tr>`).join('')||`<tr><td colspan="6"><div class="empty">Keine Treffer.</div></td></tr>`}</tbody>
+  </table></div>
+  <p class="chart-hint">Quelle: wog.ch „Neuheiten“ (Trading-Cards), geprüft alle 10 Minuten durch den Worker. Bei neuen Treffern geht eine Mail raus.</p>`
+  :(news.err?'':`<div class="empty">Lade News…</div>`)}`;
+}
+function wireNews(){
+  const c=$('#nCheck'); if(c)c.onclick=()=>loadNews('/check','POST');
+  const t=$('#nTest'); if(t)t.onclick=async()=>{ try{ await newsCall('/test','POST'); toast('Testmail gesendet'); }catch(e){ toast(e.message); } };
+  const q=$('#nQ'); if(q)q.oninput=debounce(()=>{news.q=q.value;draw();
+    const el=$('#nQ'); if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}},200);
+  const fr=$('#nFr'); if(fr)fr.onchange=()=>{news.fr=fr.value;draw();};
+}
+setInterval(()=>{ if(route==='news'&&document.visibilityState==='visible'&&!news.loading) loadNews(); },60000);
 
 /* ---------- wiring ---------- */
 function wire(){
@@ -1763,6 +1851,7 @@ const freshSetup = !lsGet(VKEY) && !hasSeed && !SYNC;
 
 function showApp(){
   $('#lock').hidden=true;
+  { const h=location.hash.slice(1); if(NAV.some(n=>n[0]===h)) route=h; }
   updateSyncUI();
   draw();
   if(SYNC){
