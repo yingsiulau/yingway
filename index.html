@@ -405,10 +405,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20261013a"></script>
-<script src="seed.enc.js?b=20261013a"></script>
+<script src="sync.config.js?b=20261027a"></script>
+<script src="seed.enc.js?b=20261027a"></script>
 <script>
-const BUILD='2026-10-13a';
+const BUILD='2026-10-27a';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -1023,7 +1023,7 @@ function viewLedger(L){
     ${shops.length?`<select id="fShop"><option value="">Alle Läden</option>${shops.map(c=>`<option ${state.shop===c?'selected':''}>${esc(c)}</option>`).join('')}</select>`:''}
     ${months.length?`<select id="fMonth"><option value="">Alle Monate</option>${months.map(m=>`<option value="${m}" ${state.month===m?'selected':''}>${monthName(m)}</option>`).join('')}</select>`:''}
     <div class="spacer"></div>
-    ${(state.q||state.cat||state.shop||state.month)?`<button class="btn ghost sm" id="clearF">Filter löschen</button>`:''}
+    ${(state.q||state.cat||state.shop||state.month)?`${f.length?`<button class="btn ghost sm" id="bulkBtn" title="Felder bei allen gefilterten Einträgen gleichzeitig ändern">${f.length} gefilterte bearbeiten…</button>`:''}<button class="btn ghost sm" id="clearF">Filter löschen</button>`:''}
     <button class="btn ghost sm" id="exportBtn"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>CSV</button>
   </div>
 
@@ -1174,6 +1174,7 @@ function wire(){
   bind('dPull',async()=>{ toast('Lade aus der Cloud…'); syncRev=0; await syncPull(false);
     if(syncState==='ok') toast('Aktueller Stand geladen'); draw(); });
   bind('dBundle',loadFromBundle);
+  bind('bulkBtn',openBulk);
   const sv=$('#savedAt'); if(sv)sv.textContent = lastSaved ? 'Zuletzt auf diesem Gerät gespeichert: '+lastSaved : 'Noch nicht gespeichert.';
   if($('#recDownload')){
     $$('.recLedger').forEach(c=>c.onchange=updateRecCount);
@@ -1451,6 +1452,44 @@ async function submitForm(){
     toast(e.message==='no-sync'?'Beleg braucht aktiven Sync':e.message==='too-big'?'PDF zu gross (max. 15 MB)':'Fehler beim Speichern');
     btn.textContent=row?'Speichern':'Anlegen'; btn.disabled=false;
   }
+}
+/* ---------- Sammelbearbeitung: Felder bei allen gefilterten Einträgen ändern ---------- */
+const BULK_FIELDS={
+  wareneingang:[['sku','SKU / ID'],['cat','Kategorie'],['form','Artikelform'],['set','Set / Bezeichnung'],['shop','Laden']],
+  warenausgang:[['sku','SKU / ID'],['cat','Kategorie'],['form','Artikelform'],['set','Set / Bezeichnung'],['shop','Laden / Plattform']],
+  laufende_kosten:[['cat','Kategorie'],['shop','Laden']],
+};
+function openBulk(){
+  const L=route, list=allFiltered(L);
+  if(!list.length) return;
+  editing={L,bulk:true};
+  const filt=[state.cat&&`Kategorie „${state.cat}"`,state.shop&&`Laden „${state.shop}"`,
+    state.month&&`Monat ${monthName(state.month)}`,state.q&&`Suche „${state.q}"`].filter(Boolean).join(' · ');
+  const opts=k=>[...new Set(rows(L).map(r=>r[k]).filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'de'));
+  $('#panelTitle').textContent='Gefilterte Einträge bearbeiten';
+  $('#panelBody').innerHTML=`<p style="color:var(--ink-soft);margin:0">Wird bei <b>${list.length} Einträgen</b> geändert
+      (alle, nicht nur die sichtbare Seite):<br><span style="color:var(--muted);font-size:12.5px">${esc(filt)}</span></p>
+    <p class="fghint" style="margin:10px 0 16px">Nur ausgefüllte Felder werden überschrieben, leere bleiben unverändert.</p>
+    <form id="bulkForm">${BULK_FIELDS[L].map(([k,lbl])=>`<div class="fg"><label>${lbl}</label>
+      <input type="text" name="${k}" list="bl_${k}" autocomplete="off">
+      <datalist id="bl_${k}">${opts(k).map(o=>`<option value="${esc(o)}">`).join('')}</datalist></div>`).join('')}</form>`;
+  $('#panelFoot').innerHTML=`<button class="btn ghost" id="cancelBtn" type="button">Abbrechen</button>
+    <button class="btn" id="bulkApply" type="button">Bei ${list.length} Einträgen anwenden</button>`;
+  $('#cancelBtn').onclick=closeForm;
+  $('#bulkApply').onclick=()=>applyBulk(L,list);
+  openPanel();
+}
+async function applyBulk(L,list){
+  const fd=new FormData($('#bulkForm')); const changes={};
+  for(const [k] of BULK_FIELDS[L]){ const v=(fd.get(k)||'').trim(); if(v) changes[k]=v; }
+  if(!Object.keys(changes).length){ toast('Bitte mindestens ein Feld ausfüllen'); return; }
+  const txt=Object.entries(changes).map(([k,v])=>`${BULK_FIELDS[L].find(f=>f[0]===k)[1]} → ${v}`).join('\n');
+  if(!confirm(`${list.length} Einträge ändern?\n\n${txt}\n\nVorher wird automatisch ein verschlüsseltes Backup heruntergeladen.`)) return;
+  try{ await exportVault(); }catch(e){}
+  const ids=new Set(list.map(r=>r.id));
+  store[L]=store[L].map(r=>ids.has(r.id)?{...r,...changes}:r);
+  persist(); closeForm(); draw();
+  toast(`${list.length} Einträge geändert`);
 }
 function confirmDel(L,row){
   editing={L,row};
