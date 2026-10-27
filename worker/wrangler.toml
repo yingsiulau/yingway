@@ -14,9 +14,9 @@ id = "5fb396d04a8b429eb0f19f21b9d94b80"
 binding = "FILES"
 bucket_name = "yingway-files"
 
-# News-Monitor (wog.ch): alle 10 Minuten prüfen.
+# News-Monitor: alle 5 Minuten die nächsten Shops prüfen.
 [triggers]
-crons = ["*/10 * * * *"]
+crons = ["*/5 * * * *"]
 
 # Mail-Empfänger und Resend-Key sind Secrets (Repo ist öffentlich):
 #   wrangler secret put NEWS_TO          (kommagetrennt, z. B. bruder@x.ch)

@@ -98,13 +98,28 @@ gesammelten ZIP-Export nach Journal + Zeitraum.
 
 ---
 
-## News & Mail (wog.ch-Monitor, optional)
+## News & Mail (Shop-Monitor, optional)
 
-Der Worker prüft alle 10 Minuten die „Neuheiten“ (Trading-Cards) von wog.ch,
-behält Pokémon / One Piece / Dragon Ball, merkt sich gesehene Produkte und
-schickt bei neuen **eine Mail** (Name, Preis, Verfügbarkeit, Link). Im Menü
-gibt es dazu die Seite **News** (auch direkt via `…/yingway/#news`).
-Der erste Lauf markiert alles Vorhandene still als „gesehen“ – keine Mail-Flut.
+Der Worker prüft reihum die Shops, die du in der App unter **News → Quellen**
+einträgst (URL pro Zeile einfügen, auch viele auf einmal). Pro Shop wird auf
+**Pokémon / One Piece / Dragon Ball** gefiltert und bei jeder Änderung gemeldet:
+**neue Produkte**, **Preisänderungen** und **ausverkauft → wieder verfügbar**
+(Dashboard unter *News*, auch via `…/yingway/#news`, plus eine gebündelte Mail
+pro Prüfrunde). Neue Quellen merken sich beim ersten Lauf nur den aktuellen
+Stand – keine Mail-Flut.
+
+- **Unterstützt:** Shopify-Shops (die meisten kleinen TCG-Shops; am besten die
+  Kollektions-URL, z. B. `https://cardtreasure.ch/collections/…`, oder die
+  Shop-Startseite für alle Produkte) und wog.ch. Andere Systeme meldet die App
+  als „Shop-Typ nicht erkannt“ – dafür braucht es einen eigenen Adapter.
+- **Filter-Haken:** bei Kollektionen, die ohnehin nur Pokémon enthalten (URL
+  enthält „pokemon“), schaltet die App den Filter automatisch aus, weil
+  Produkttitel dort oft das Wort nicht enthalten.
+- **Takt:** Cron alle 5 Min.; pro Lauf werden so viele Quellen geprüft, wie das
+  Budget (40 Anfragen, ~2,5 MB) erlaubt, die am längsten ungeprüften zuerst. Bei
+  ~50 Shops ist ein voller Durchgang daher nach ca. 20–40 Min. durch. Auf dem
+  bezahlten Workers-Plan ($5/Monat) kannst du `RUN_SUBREQ`/`RUN_BYTES` in
+  `worker/worker.js` stark erhöhen, dann wird alles jede Runde geprüft.
 
 Das Dashboard läuft schon nach `wrangler deploy` (der Cron ist in
 `wrangler.toml` eingetragen). Für die **Mails** braucht es einmalig einen
@@ -128,9 +143,9 @@ Key und seine Adresse im Worker:
 
 Beide sehen die Seite **News** mit URL + Passphrase, wie die restliche App.
 Mehrere Empfänger: `NEWS_TO` kommagetrennt (nur mit bei Resend verifizierter
-Domain, dann auch `NEWS_FROM` setzen). Die Filter-Stichwörter stehen oben in
-`worker/worker.js` (`NEWS_FILTER`). Abfrage-Rücksicht: eine Anfrage / 10 Min.,
-ehrlicher User-Agent, nicht die in der robots.txt gesperrten Seiten.
+Domain, dann auch `NEWS_FROM` setzen). Die Filter-Stichwörter stehen in
+`worker/worker.js` (`FRANCHISES`). Abfrage-Rücksicht: je Shop höchstens eine Abfrage
+alle paar Minuten, ehrlicher User-Agent, nur öffentliche Produkt-Feeds.
 
 ---
 
