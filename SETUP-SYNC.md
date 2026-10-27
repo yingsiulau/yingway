@@ -108,22 +108,27 @@ Der erste Lauf markiert alles Vorhandene still als „gesehen“ – keine Mail-
 
 Das Dashboard läuft schon nach `wrangler deploy` (der Cron ist in
 `wrangler.toml` eingetragen). Für die **Mails** braucht es einmalig einen
-Mail-API-Dienst (Resend, gratis: 100 Mails/Tag):
+Mail-API-Dienst (Resend, gratis: 100 Mails/Tag). Dein Bruder muss dafür
+nichts deployen – er braucht nur ein Resend-Konto, und du hinterlegst
+Key und seine Adresse im Worker:
 
-1. Konto auf https://resend.com anlegen (mit derselben Adresse wie in
-   `NEWS_TO` in `worker/wrangler.toml` – ohne eigene Domain darf Resend nur an
-   die Konto-Adresse senden).
-2. Unter *API Keys* einen Key erstellen und im Worker hinterlegen:
+1. **Bruder:** Konto auf https://resend.com mit **seiner Mail-Adresse** anlegen
+   (ohne eigene Domain darf Resend nur an die Konto-Adresse senden), unter
+   *API Keys* einen Key erstellen und dir schicken.
+2. **Du:** Key und Empfänger im Worker hinterlegen (Secrets – bleiben aus dem
+   öffentlichen Repo raus):
 
    ```bash
    cd /Users/ylau/Yingway/worker
    wrangler secret put RESEND_API_KEY     # Key einfügen, Enter
+   wrangler secret put NEWS_TO            # Adresse deines Bruders
    wrangler deploy
    ```
-3. In der App → **News** → **Testmail** (zeigt „Mail aktiv“, sobald das Secret da ist).
+3. In der App → **News** → **Testmail** (zeigt „Mail aktiv“, sobald beide Secrets da sind).
 
-Weitere Empfänger: `NEWS_TO = "a@x.ch,b@y.ch"` (nur mit verifizierter Domain
-bei Resend, dann auch `NEWS_FROM` setzen). Die Filter-Stichwörter stehen oben in
+Beide sehen die Seite **News** mit URL + Passphrase, wie die restliche App.
+Mehrere Empfänger: `NEWS_TO` kommagetrennt (nur mit bei Resend verifizierter
+Domain, dann auch `NEWS_FROM` setzen). Die Filter-Stichwörter stehen oben in
 `worker/worker.js` (`NEWS_FILTER`). Abfrage-Rücksicht: eine Anfrage / 10 Min.,
 ehrlicher User-Agent, nicht die in der robots.txt gesperrten Seiten.
 

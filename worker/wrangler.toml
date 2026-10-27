@@ -18,7 +18,7 @@ bucket_name = "yingway-files"
 [triggers]
 crons = ["*/10 * * * *"]
 
-# Mail-Empfänger (kommagetrennt). Mit Resend ohne eigene Domain muss das die
-# Adresse sein, mit der das Resend-Konto angelegt wurde. Absender optional via NEWS_FROM.
-[vars]
-NEWS_TO = "yingsiulau@gmail.com"
+# Mail-Empfänger und Resend-Key sind Secrets (Repo ist öffentlich):
+#   wrangler secret put NEWS_TO          (kommagetrennt, z. B. bruder@x.ch)
+#   wrangler secret put RESEND_API_KEY
+# Absender optional als Variable NEWS_FROM (nur mit verifizierter Domain nötig).
