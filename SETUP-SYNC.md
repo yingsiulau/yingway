@@ -115,6 +115,13 @@ Stand – keine Mail-Flut.
   die App als „Shop-Typ nicht erkannt“ – dafür braucht es einen eigenen Adapter.
   Seiten, deren robots.txt das Abrufen von Verfügbarkeiten verbietet, werden nicht
   abgefragt.
+- **Beobachten (einzelne Produkte):** In *News → Beobachten* einen Produkt-Link
+  einfügen. Die App prüft ihn wie in einem Chat: bei einem Produkt mit Varianten
+  fragt sie, welche gemeint ist; bei einer Kollektions-/Shop-Seite zeigt sie die
+  neuesten Produkte zur Auswahl (oder „ganze Kollektion überwachen“); nicht
+  unterstützte Links werden abgelehnt. Mit dem Häkchen wird die Beobachtung
+  gespeichert, gemeldet werden Preisänderungen und „wieder verfügbar“. Funktioniert
+  für Shopify-, WooCommerce-Produktseiten und wog.ch.
 - **Filter-Haken:** bei Kollektionen, die ohnehin nur Pokémon enthalten (URL
   enthält „pokemon“), schaltet die App den Filter automatisch aus, weil
   Produkttitel dort oft das Wort nicht enthalten.

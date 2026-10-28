@@ -243,6 +243,17 @@ async function wooCategoryId(src) {
   throw new Error('Kategorie nicht gefunden (URL der Kategorie-Seite verwenden)');
 }
 
+function wooNorm(p) {
+  const hay = [p.name, ...(p.categories || []).map((c) => c.name), ...(p.tags || []).map((c) => c.name)].map(decodeEntities).join(' ');
+  const pr = p.prices && p.prices.price !== '' && p.prices.price != null ? Number(p.prices.price) / Math.pow(10, p.prices.currency_minor_unit == null ? 2 : p.prices.currency_minor_unit) : null;
+  return {
+    id: String(p.id), t: decodeEntities(p.name), p: pr,
+    a: p.is_in_stock ? 1 : 0, u: p.permalink,
+    i: (p.images && p.images[0] && (p.images[0].thumbnail || p.images[0].src)) || '',
+    g: franchiseOf(hay), hay,
+  };
+}
+
 async function fetchWoo(src) {
   const out = [];
   let pages = 0, bytes = 0, truncated = false;
@@ -251,16 +262,9 @@ async function fetchWoo(src) {
     pages++; bytes += b;
     if (!Array.isArray(data)) throw new Error(new URL(src.url).host + ': kein WooCommerce-Shop');
     for (const p of data) {
-      const names = [p.name, ...(p.categories || []).map((c) => c.name), ...(p.tags || []).map((c) => c.name)].map(decodeEntities);
-      const hay = names.join(' ');
-      if (src.filter && !FRANCHISES.some(([, re]) => re.test(hay))) continue;
-      const pr = p.prices && p.prices.price !== '' && p.prices.price != null ? Number(p.prices.price) / Math.pow(10, p.prices.currency_minor_unit == null ? 2 : p.prices.currency_minor_unit) : null;
-      out.push({
-        id: String(p.id), t: decodeEntities(p.name), p: pr,
-        a: p.is_in_stock ? 1 : 0, u: p.permalink,
-        i: (p.images && p.images[0] && (p.images[0].thumbnail || p.images[0].src)) || '',
-        g: franchiseOf(hay),
-      });
+      const it = wooNorm(p);
+      if (src.filter && !FRANCHISES.some(([, re]) => re.test(it.hay))) continue;
+      delete it.hay; out.push(it);
     }
     if (data.length < 100) break;
     if (page === MAX_PAGES) truncated = true;
@@ -268,8 +272,8 @@ async function fetchWoo(src) {
   return { list: out, pages, bytes, truncated };
 }
 
-const fetchSource = (src) => (src.type === 'wog' ? fetchWog(src) : src.type === 'woocommerce' ? fetchWoo(src) : fetchShopify(src));
-const srcKey = (s) => (s.type === 'wog' ? 'wog' : s.type === 'woocommerce' ? wooApi(s) + '#' + (s.cat || '') : shopifyApi(s));
+const fetchSource = (src) => (src.item ? fetchItem(src).then((r) => { r.list.forEach((x) => { x.id = 'x'; }); return r; }) : src.type === 'wog' ? fetchWog(src) : src.type === 'woocommerce' ? fetchWoo(src) : fetchShopify(src));
+const srcKey = (s) => (s.item ? 'item:' + new URL(s.url).origin + '|' + (s.item.handle || s.item.slug || s.item.pid) + '|' + (s.item.vid || '') : s.type === 'wog' ? 'wog' : s.type === 'woocommerce' ? wooApi(s) + '#' + (s.cat || '') : shopifyApi(s));
 
 
 // Shop-Typ erkennen (wog.ch, Shopify, WooCommerce) und einen lesbaren Namen bilden.
@@ -302,6 +306,123 @@ async function detectSource(url) {
   throw new Error('Shop-Typ nicht erkannt (unterstützt: Shopify, WooCommerce, wog.ch)');
 }
 
+
+// ---- Einzelne Produkte beobachten ("Beobachten" in der App) ----
+// Ein beobachtetes Produkt ist eine Quelle mit  item: { handle | slug | pid, vid? }  (genau 1 Produkt/Variante).
+const absUrl = (u) => (u && u.startsWith('//') ? 'https:' + u : u || '');
+const priceOfJs = (v) => {
+  const p = v.price;
+  if (typeof p === 'number') return p / 100;
+  const t = String(p);
+  return t.includes('.') ? parseFloat(t) : parseFloat(t) / 100;
+};
+
+// Shopify  /products/<handle>.js  ->  eine Variante (vid) oder das ganze Produkt (günstigster Preis / irgendeine verfügbar)
+function shopifyJsItems(j, origin, vid, all) {
+  const vs = j.variants || [];
+  const hay = [j.title, j.type, j.vendor, (j.tags || []).join(' ')].join(' ');
+  const base = { g: franchiseOf(hay), i: shopifyImg(absUrl(j.featured_image || (j.images && j.images[0]))) };
+  const one = (v, label) => Object.assign({ id: String(v.id), t: label ? j.title + ' – ' + v.title : j.title, p: priceOfJs(v), a: v.available ? 1 : 0, u: origin + '/products/' + j.handle + '?variant=' + v.id, vid: v.id }, base);
+  if (vid) { const v = vs.find((x) => String(x.id) === String(vid)); return v ? [one(v, vs.length > 1)] : []; }
+  if (all) return vs.map((v) => one(v, vs.length > 1));
+  const ps = vs.map(priceOfJs).filter((x) => x >= 0);
+  return [Object.assign({ id: String(j.id), t: j.title, p: ps.length ? Math.min(...ps) : null, a: vs.some((v) => v.available) ? 1 : 0, u: origin + '/products/' + j.handle }, base)];
+}
+
+async function getHtml(url) {
+  const res = await fetch(url, { headers: { 'User-Agent': WATCH_UA, Accept: 'text/html' } });
+  if (!res.ok) throw new Error(new URL(url).host + ': HTTP ' + res.status);
+  const html = await res.text();
+  return { html, bytes: html.length };
+}
+function wogItemFromHtml(html, url) {
+  const m = (re) => { const x = html.match(re); return x ? x[1].trim() : ''; };
+  const pid = m(/var productID = (\d+)/);
+  const price = parseFloat(m(/itemprop="price" content="([\d.]+)"/));
+  const avail = m(/itemprop="availability" href="\s*([^"]+)"/);
+  if (!pid || !(price >= 0)) throw new Error('wog.ch: Produktseite nicht lesbar');
+  const title = decodeEntities(m(/<meta property="og:title" content="([^"]+)"/)).replace(/\s*\[[^\]]+\]\s*$/, '');
+  return { id: pid, pid, t: title, p: price > 0 ? price : null, a: /InStock|PreOrder|LimitedAvailability|OnlineOnly/i.test(avail) ? 1 : 0, u: url, i: m(/<meta property="og:image" content="([^"]+)"/), g: franchiseOf(title) };
+}
+
+async function fetchItem(src) {
+  const it = src.item, origin = new URL(src.url).origin;
+  if (src.type === 'shopify') {
+    const { data, bytes } = await getJson(origin + '/products/' + it.handle + '.js');
+    const list = shopifyJsItems(data, origin, it.vid, false);
+    if (!list.length) throw new Error('Produkt/Variante nicht mehr gefunden');
+    return { list, pages: 1, bytes };
+  }
+  if (src.type === 'woocommerce') {
+    const { data, bytes } = await getJson(wooApi(src) + '/products?slug=' + encodeURIComponent(it.slug));
+    if (!Array.isArray(data) || !data[0]) throw new Error('Produkt nicht mehr gefunden');
+    const x = wooNorm(data[0]); delete x.hay;
+    return { list: [x], pages: 1, bytes };
+  }
+  const { html, bytes } = await getHtml(src.url);
+  return { list: [wogItemFromHtml(html, src.url)], pages: 1, bytes };
+}
+
+// Link prüfen: Produkt (evtl. mit Varianten), Kollektion/Shop (Auswahl anbieten) oder nicht unterstützt.
+async function probeLink(raw) {
+  let u;
+  try { u = new URL(raw.includes('://') ? raw : 'https://' + raw); } catch (e) { throw new Error('keine gültige URL'); }
+  if (!/^https?:$/.test(u.protocol)) throw new Error('keine gültige URL');
+  const host = u.hostname.replace(/^www\./, '');
+  const shop = host.replace(/\.(ch|com|de|eu|net|shop|store)$/, '');
+  const path = decodeURIComponent(u.pathname).replace(/\/+$/, '');
+  const tag = (list, type, name, extra) => list.map((x) => Object.assign({ type, shop: name, title: x.t, price: x.p, a: x.a, img: x.i, url: x.u, item: Object.assign({}, extra, x.vid ? { vid: x.vid } : {}) }, {}));
+
+  // wog.ch
+  if (/(^|\.)wog\.ch$/.test(host)) {
+    const pm = path.match(/\/details\/product\/(\d+)/);
+    if (pm) {
+      const { html } = await getHtml(u.origin + u.pathname);
+      const x = wogItemFromHtml(html, u.origin + u.pathname);
+      return { kind: 'product', shop: 'World of Games', items: tag([x], 'wog', 'World of Games', { pid: x.pid }) };
+    }
+    const { list } = await fetchWog({ filter: false });
+    return { kind: 'collection', shop: 'World of Games', source: { url: raw }, items: list.slice(0, 12).map((x) => ({ type: 'wog', shop: 'World of Games', title: x.t, price: x.p, a: x.a, img: x.i, url: x.u, item: { pid: x.id, url: x.u } })) };
+  }
+
+  // Shopify-Produkt
+  const sm = path.match(/\/products\/([^/]+)$/);
+  if (sm) {
+    try {
+      const { data } = await getJson(u.origin + '/products/' + sm[1] + '.js');
+      if (data && Array.isArray(data.variants)) {
+        const list = shopifyJsItems(data, u.origin, null, true);
+        return { kind: 'product', shop, items: tag(list, 'shopify', shop, { handle: data.handle }) };
+      }
+    } catch (e) { if (/HTTP 429/.test(e.message)) throw e; }
+  }
+
+  // Kollektion / Shop (Shopify oder WooCommerce) – oder WooCommerce-Produkt
+  let det;
+  try { det = await detectSource(raw); } catch (e) { det = null; }
+  if (det && det.type === 'shopify' && !sm) {
+    const { data } = await getJson(shopifyApi({ url: det.url }) + '?limit=12');
+    const list = (data.products || []).map((p) => shopifyJsItems(Object.assign({ type: p.product_type, vendor: p.vendor, featured_image: p.images && p.images[0] && p.images[0].src }, p, { variants: (p.variants || []).map((v) => Object.assign({}, v, { price: v.price })) }), u.origin, null, false)[0]);
+    return { kind: 'collection', shop: det.name, source: { url: det.url }, items: list.map((x, i) => ({ type: 'shopify', shop: shop, title: x.t, price: x.p, a: x.a, img: x.i, url: x.u, item: { handle: data.products[i].handle } })) };
+  }
+  // WooCommerce-Produkt: letzter Pfadteil = slug
+  const slug = path.split('/').filter(Boolean).pop();
+  if (slug) {
+    try {
+      const { data } = await getJson(u.origin + '/wp-json/wc/store/v1/products?slug=' + encodeURIComponent(slug));
+      if (Array.isArray(data) && data[0]) {
+        const x = wooNorm(data[0]); delete x.hay;
+        return { kind: 'product', shop, items: tag([x], 'woocommerce', shop, { slug: data[0].slug }) };
+      }
+    } catch (e) { /* weiter */ }
+  }
+  if (det && det.type === 'woocommerce') {
+    const { data } = await getJson(wooApi({ url: det.url }) + '/products?per_page=12' + (det.cat ? '&category=' + det.cat : ''));
+    return { kind: 'collection', shop: det.name, source: { url: det.url }, items: data.map((p) => { const x = wooNorm(p); return { type: 'woocommerce', shop, title: x.t, price: x.p, a: x.a, img: x.i, url: x.u, item: { slug: p.slug } }; }) };
+  }
+  throw new Error('Weder Produkt noch Kollektion erkannt – unterstützt sind Shopify, WooCommerce und wog.ch');
+}
+
 // ---- Vergleich: neu / Preis / wieder verfügbar ----
 function diff(src, list, prev, init, now) {
   const next = Object.assign({}, prev);
@@ -309,7 +430,7 @@ function diff(src, list, prev, init, now) {
   for (const it of list) {
     const old = prev[it.id];
     if (init) {
-      const ev = { s: src.name, id: it.id, t: it.t, p: it.p, a: it.a, u: it.u, i: it.i, g: it.g, at: now };
+      const ev = { s: src.shop || src.name, id: it.id, t: it.t, p: it.p, a: it.a, u: it.u, i: it.i, g: it.g, at: now };
       if (!old) events.push(Object.assign({ k: 'new' }, ev));
       else {
         if (old[0] != null && it.p != null && Math.abs(old[0] - it.p) > 0.004) events.push(Object.assign({ k: 'price', o: old[0] }, ev));
@@ -375,8 +496,14 @@ async function runWatch(env) {
     batch.push(s); pagesLeft -= pg; bytesLeft -= by;
   }
 
-  const results = await Promise.all(batch.map(async (s) => {
-    try { return { s, r: await fetchSource(s) }; } catch (e) { return { s, err: e.message }; }
+  // Höchstens 4 gleichzeitig: Shopify & Co. drosseln (HTTP 429), wenn eine IP viele Shops auf einmal abfragt.
+  const results = [];
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(4, batch.length) }, async () => {
+    while (next < batch.length) {
+      const s = batch[next++];
+      try { results.push({ s, r: await fetchSource(s) }); } catch (e) { results.push({ s, err: e.message }); }
+    }
   }));
 
   const events = [];
@@ -387,6 +514,7 @@ async function runWatch(env) {
     const d = diff(s, r.list, state.snap[s.id] || {}, !!st.init, now);
     Object.assign(st, { lastOk: now, lastError: r.truncated ? 'sehr grosse Kollektion – nur die ersten ' + (MAX_PAGES * 250) + ' Produkte' : null,
       count: r.list.length, pages: r.pages, bytes: r.bytes, init: true });
+    if (s.item && r.list[0]) st.cur = { p: r.list[0].p, a: r.list[0].a };
     commits.push([s.id, d.next, st, d.events.length]);
     events.push(...d.events);
   }
@@ -435,6 +563,44 @@ async function handleNews(request, env, url, tokenHash) {
       if (r.skipped) return json({ error: 'Mail nicht eingerichtet (RESEND_API_KEY / NEWS_TO fehlt)' }, 400);
       return json({ ok: true, sent: r.sent });
     } catch (e) { return json({ error: e.message }, 502); }
+  }
+
+  if (path === '/news/watch/probe' && m === 'POST') {
+    let body;
+    try { body = await request.json(); } catch (e) { return text('bad json', 400); }
+    try { return json(await probeLink(String(body.url || '').trim())); }
+    catch (e) { return json({ error: e.message }, 422); }
+  }
+
+  if (path === '/news/watch' && m === 'POST') {
+    let body;
+    try { body = await request.json(); } catch (e) { return text('bad json', 400); }
+    const cfg = await readCfg(env);
+    const st = await readState(env);
+    const now = new Date().toISOString();
+    const out = [];
+    for (const x of (Array.isArray(body.items) ? body.items : []).slice(0, 20)) {
+      try {
+        if (!['shopify', 'woocommerce', 'wog'].includes(x.type)) throw new Error('Typ nicht unterstützt');
+        const it = x.item || {};
+        const ref = { handle: it.handle && String(it.handle), slug: it.slug && String(it.slug), pid: it.pid && String(it.pid), vid: it.vid && String(it.vid) };
+        if (!(ref.handle || ref.slug || ref.pid)) throw new Error('Produkt unklar');
+        const pu = new URL(String(x.url));
+        if (!/^https?:$/.test(pu.protocol)) throw new Error('keine gültige URL');
+        if (cfg.sources.length >= MAX_SOURCES) throw new Error('maximal ' + MAX_SOURCES + ' Quellen');
+        const src = { id: crypto.randomUUID().slice(0, 8), name: String(x.title || '').slice(0, 120), shop: String(x.shop || pu.hostname).slice(0, 60), url: pu.origin + (x.type === 'wog' ? pu.pathname : ''), type: x.type, filter: false, item: ref, img: String(x.img || '').slice(0, 300) };
+        if (cfg.sources.some((s) => srcKey(s) === srcKey(src))) throw new Error('schon vorhanden');
+        cfg.sources.push(src);
+        // Stand von der Prüfung übernehmen -> erste Änderung wird schon erkannt
+        const price = x.price == null ? null : Number(x.price);
+        st.snap[src.id] = { x: [price, x.a ? 1 : 0] };
+        st.src[src.id] = { init: true, lastCheck: now, lastOk: now, count: 1, pages: 1, bytes: x.type === 'wog' ? 1100000 : 8000, cur: { p: price, a: x.a ? 1 : 0 } };
+        out.push({ ok: true, id: src.id });
+      } catch (e) { out.push({ ok: false, error: e.message }); }
+    }
+    await env.DB.put(CFG_KEY, JSON.stringify(cfg));
+    await env.DB.put(STATE_KEY, JSON.stringify(st));
+    return json({ results: out });
   }
 
   if (path === '/news/sources' && m === 'POST') {
