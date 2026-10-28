@@ -405,10 +405,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20261028a"></script>
-<script src="seed.enc.js?b=20261028a"></script>
+<script src="sync.config.js?b=20261028b"></script>
+<script src="seed.enc.js?b=20261028b"></script>
 <script>
-const BUILD='2026-10-28a';
+const BUILD='2026-10-28b';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -1234,7 +1234,7 @@ function viewNews(){
   ${d&&!d.mail?`<div class="banner"><span>Mail-Benachrichtigung ist noch nicht eingerichtet – das Dashboard funktioniert trotzdem. Anleitung: <b>SETUP-SYNC.md → News &amp; Mail</b>.</span></div>`:''}
   ${news.showSrc&&d?`<div class="card">
     <h2>Quellen</h2>
-    <div class="cap">Shops, die geprüft werden. Unterstützt: <b>Shopify-Shops</b> (z. B. eine Kollektions-URL wie <span class="mono">https://cardtreasure.ch/collections/…</span>) und wog.ch. Pro Quelle wird bei Neuem, Preisänderung und „wieder verfügbar“ gemeldet.</div>
+    <div class="cap">Shops, die geprüft werden. Unterstützt: <b>Shopify</b>- und <b>WooCommerce</b>-Shops (am besten die Kategorie-/Kollektions-URL, z. B. <span class="mono">https://cardtreasure.ch/collections/…</span>) und wog.ch. Pro Quelle wird bei Neuem, Preisänderung und „wieder verfügbar“ gemeldet.</div>
     <textarea id="nUrls" rows="4" placeholder="Eine Shop-URL pro Zeile …" style="width:100%;background:var(--surface);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px">${esc(news.urls)}</textarea>
     <div class="toolbar" style="margin:8px 0 0">
       <label class="chk"><input type="checkbox" id="nFilter" ${news.filter?'checked':''}>Nur Pokémon / One Piece / Dragon Ball melden</label>

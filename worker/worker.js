@@ -224,22 +224,82 @@ async function fetchWog(src) {
   return { list, pages: 1, bytes };
 }
 
-const fetchSource = (src) => (src.type === 'wog' ? fetchWog(src) : fetchShopify(src));
+// WooCommerce (öffentliche Store-API): Kategorie-URL -> Kategorie-ID, dann Produkte seitenweise.
+const wooApi = (src) => new URL(src.url).origin + '/wp-json/wc/store/v1';
+const decodeEntities = (t) => String(t || '').replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n))
+  .replace(/&(amp|lt|gt|quot|nbsp);/g, (_, k) => ({ amp: '&', lt: '<', gt: '>', quot: '"', nbsp: ' ' }[k]));
+const trimSlash = (p) => decodeURIComponent(p).replace(/\/+$/, '');
 
-// Shopify-Shop? Dann Typ + Name zurückgeben.
+async function wooCategoryId(src) {
+  const path = trimSlash(new URL(src.url).pathname);
+  if (!path || /^\/(shop|produkte|products)$/i.test(path)) return null; // ganzer Shop
+  for (let page = 1; page <= 3; page++) {
+    const { data } = await getJson(wooApi(src) + '/products/categories?per_page=100&page=' + page);
+    if (!Array.isArray(data)) break;
+    const c = data.find((x) => trimSlash(new URL(x.permalink).pathname) === path);
+    if (c) return { id: c.id, name: decodeEntities(c.name) };
+    if (data.length < 100) break;
+  }
+  throw new Error('Kategorie nicht gefunden (URL der Kategorie-Seite verwenden)');
+}
+
+async function fetchWoo(src) {
+  const out = [];
+  let pages = 0, bytes = 0, truncated = false;
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const { data, bytes: b } = await getJson(wooApi(src) + '/products?per_page=100&page=' + page + (src.cat ? '&category=' + src.cat : ''));
+    pages++; bytes += b;
+    if (!Array.isArray(data)) throw new Error(new URL(src.url).host + ': kein WooCommerce-Shop');
+    for (const p of data) {
+      const names = [p.name, ...(p.categories || []).map((c) => c.name), ...(p.tags || []).map((c) => c.name)].map(decodeEntities);
+      const hay = names.join(' ');
+      if (src.filter && !FRANCHISES.some(([, re]) => re.test(hay))) continue;
+      const pr = p.prices && p.prices.price !== '' && p.prices.price != null ? Number(p.prices.price) / Math.pow(10, p.prices.currency_minor_unit == null ? 2 : p.prices.currency_minor_unit) : null;
+      out.push({
+        id: String(p.id), t: decodeEntities(p.name), p: pr,
+        a: p.is_in_stock ? 1 : 0, u: p.permalink,
+        i: (p.images && p.images[0] && (p.images[0].thumbnail || p.images[0].src)) || '',
+        g: franchiseOf(hay),
+      });
+    }
+    if (data.length < 100) break;
+    if (page === MAX_PAGES) truncated = true;
+  }
+  return { list: out, pages, bytes, truncated };
+}
+
+const fetchSource = (src) => (src.type === 'wog' ? fetchWog(src) : src.type === 'woocommerce' ? fetchWoo(src) : fetchShopify(src));
+const srcKey = (s) => (s.type === 'wog' ? 'wog' : s.type === 'woocommerce' ? wooApi(s) + '#' + (s.cat || '') : shopifyApi(s));
+
+
+// Shop-Typ erkennen (wog.ch, Shopify, WooCommerce) und einen lesbaren Namen bilden.
 async function detectSource(url) {
   let u;
   try { u = new URL(url.includes('://') ? url : 'https://' + url); } catch (e) { throw new Error('keine gültige URL'); }
   if (!/^https?:$/.test(u.protocol)) throw new Error('keine gültige URL');
   const host = u.hostname.replace(/^www\./, '');
-  const name = host.replace(/\.(ch|com|de|net|shop|store)$/, '');
+  const shop = host.replace(/\.(ch|com|de|eu|net|shop|store)$/, '');
   if (/(^|\.)wog\.ch$/.test(host)) return { type: 'wog', url: DEFAULT_SOURCES[0].url, name: 'World of Games' };
-  const probe = { url: u.href };
+
+  const clean = u.origin + u.pathname.replace(/\/+$/, '');
+  const probe = { url: clean };
   try {
     const { data } = await getJson(shopifyApi(probe) + '?limit=1');
-    if (Array.isArray(data.products)) return { type: 'shopify', url: u.origin + u.pathname.replace(/\/+$/, ''), name };
+    if (Array.isArray(data.products)) {
+      const m = u.pathname.match(/\/collections\/([^/]+)/);
+      return { type: 'shopify', url: clean, name: m && m[1] !== 'all' ? shop + ' · ' + m[1] : shop };
+    }
   } catch (e) { /* weiter */ }
-  throw new Error('Shop-Typ nicht erkannt (unterstützt: Shopify-Shops, wog.ch)');
+  try {
+    const { data } = await getJson(wooApi(probe) + '/products?per_page=1');
+    if (Array.isArray(data)) {
+      const cat = await wooCategoryId(probe);
+      return { type: 'woocommerce', url: clean, cat: cat && cat.id, name: cat ? shop + ' · ' + cat.name : shop };
+    }
+  } catch (e) {
+    if (/Kategorie/.test(e.message)) throw e;
+  }
+  throw new Error('Shop-Typ nicht erkannt (unterstützt: Shopify, WooCommerce, wog.ch)');
 }
 
 // ---- Vergleich: neu / Preis / wieder verfügbar ----
@@ -387,11 +447,11 @@ async function handleNews(request, env, url, tokenHash) {
       try {
         if (cfg.sources.length >= MAX_SOURCES) throw new Error('maximal ' + MAX_SOURCES + ' Quellen');
         const d = await detectSource(raw);
-        const key = d.type === 'wog' ? 'wog' : shopifyApi(d);
-        if (cfg.sources.some((s) => (s.type === 'wog' ? 'wog' : shopifyApi(s)) === key)) throw new Error('schon vorhanden');
+        if (cfg.sources.some((s) => srcKey(s) === srcKey(d))) throw new Error('schon vorhanden');
         const id = d.type === 'wog' ? 'wog' : crypto.randomUUID().slice(0, 8);
-        const filter = body.filter !== false && !FRANCHISES.some(([, re]) => re.test(d.url));
-        cfg.sources.push({ id, name: d.name, url: d.url, type: d.type, filter });
+        let readable = d.url; try { readable = decodeURIComponent(d.url); } catch (e) { /* roh lassen */ }
+        const filter = body.filter !== false && !FRANCHISES.some(([, re]) => re.test(readable));
+        cfg.sources.push(Object.assign({ id, name: d.name, url: d.url, type: d.type, filter }, d.cat ? { cat: d.cat } : {}));
         results.push({ url: raw, ok: true, name: d.name, type: d.type, filter });
       } catch (e) { results.push({ url: raw, ok: false, error: e.message }); }
     }

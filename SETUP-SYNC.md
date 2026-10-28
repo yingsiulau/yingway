@@ -108,10 +108,13 @@ einträgst (URL pro Zeile einfügen, auch viele auf einmal). Pro Shop wird auf
 pro Prüfrunde). Neue Quellen merken sich beim ersten Lauf nur den aktuellen
 Stand – keine Mail-Flut.
 
-- **Unterstützt:** Shopify-Shops (die meisten kleinen TCG-Shops; am besten die
-  Kollektions-URL, z. B. `https://cardtreasure.ch/collections/…`, oder die
-  Shop-Startseite für alle Produkte) und wog.ch. Andere Systeme meldet die App
-  als „Shop-Typ nicht erkannt“ – dafür braucht es einen eigenen Adapter.
+- **Unterstützt:** Shopify-Shops und WooCommerce-Shops (am besten die
+  Kategorie-/Kollektions-URL, z. B. `https://cardtreasure.ch/collections/…`
+  oder `https://www.nooks.ch/pokemon/`; die Shop-Startseite überwacht alle
+  Produkte) sowie wog.ch. Andere Systeme (PrestaShop, Wix, JS-only-Seiten) meldet
+  die App als „Shop-Typ nicht erkannt“ – dafür braucht es einen eigenen Adapter.
+  Seiten, deren robots.txt das Abrufen von Verfügbarkeiten verbietet, werden nicht
+  abgefragt.
 - **Filter-Haken:** bei Kollektionen, die ohnehin nur Pokémon enthalten (URL
   enthält „pokemon“), schaltet die App den Filter automatisch aus, weil
   Produkttitel dort oft das Wort nicht enthalten.
