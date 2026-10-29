@@ -35,6 +35,8 @@
  *   POST   /news/sources        Body { urls:[…≤8], filter }  -> Quellen hinzufügen (Typ wird erkannt)
  *   PUT    /news/sources/<id>   Body { name?, off?, filter? }
  *   DELETE /news/sources/<id>
+ *   GET /news/push/key · POST /news/push {sub} · POST /news/push/remove {endpoint} · POST /news/push/test
+ *             -> Web-Push (PWA): Geräte anmelden, Test senden
  *   Gleiche Passphrase-Auth wie /files. Mail nur, wenn die Secrets RESEND_API_KEY und NEWS_TO
  *   gesetzt sind (siehe SETUP-SYNC.md); sonst läuft nur das Dashboard.
  */
@@ -423,6 +425,87 @@ async function probeLink(raw) {
   throw new Error('Weder Produkt noch Kollektion erkannt – unterstützt sind Shopify, WooCommerce und wog.ch');
 }
 
+
+// ---------- Web Push (VAPID + RFC 8291 "aes128gcm", ohne Bibliothek) ----------
+// Die VAPID-Schlüssel erzeugt der Worker beim ersten Bedarf selbst und legt sie in KV ab.
+const PUSH_KEY = 'watch:push';
+const VAPID_KEY = 'watch:vapid';
+const MAX_PUSH_DEVICES = 8;
+const PUSH_HOSTS = /^https:\/\/([\w.-]+\.)?(googleapis\.com|push\.services\.mozilla\.com|push\.apple\.com|notify\.windows\.com)\//;
+const te = new TextEncoder();
+const b64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64u = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (s.length % 4)) % 4)), (c) => c.charCodeAt(0));
+const concat = (...a) => { const o = new Uint8Array(a.reduce((n, x) => n + x.length, 0)); let i = 0; for (const x of a) { o.set(x, i); i += x.length; } return o; };
+
+async function getVapid(env) {
+  const stored = await env.DB.get(VAPID_KEY);
+  if (stored) return JSON.parse(stored);
+  const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  const v = { priv: await crypto.subtle.exportKey('jwk', kp.privateKey), pub: b64u(await crypto.subtle.exportKey('raw', kp.publicKey)) };
+  await env.DB.put(VAPID_KEY, JSON.stringify(v));
+  return v;
+}
+async function vapidHeader(endpoint, v) {
+  const head = b64u(te.encode(JSON.stringify({ typ: 'JWT', alg: 'ES256' })));
+  const claims = b64u(te.encode(JSON.stringify({ aud: new URL(endpoint).origin, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: 'https://yingsiulau.github.io/yingway/' })));
+  const key = await crypto.subtle.importKey('jwk', v.priv, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, te.encode(head + '.' + claims));
+  return 'vapid t=' + head + '.' + claims + '.' + b64u(sig) + ', k=' + v.pub;
+}
+async function hkdf(salt, ikm, info, len) {
+  const k = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']);
+  return new Uint8Array(await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info }, k, len * 8));
+}
+// Nutzlast für ein Gerät verschlüsseln (RFC 8291, ein Record).
+async function encryptPush(sub, plaintext) {
+  const uaPub = unb64u(sub.keys.p256dh), auth = unb64u(sub.keys.auth);
+  const as = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const asPub = new Uint8Array(await crypto.subtle.exportKey('raw', as.publicKey));
+  const uaKey = await crypto.subtle.importKey('raw', uaPub, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+  const secret = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: uaKey }, as.privateKey, 256));
+  const ikm = await hkdf(auth, secret, concat(te.encode('WebPush: info\0'), uaPub, asPub), 32);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const cek = await hkdf(salt, ikm, te.encode('Content-Encoding: aes128gcm\0'), 16);
+  const nonce = await hkdf(salt, ikm, te.encode('Content-Encoding: nonce\0'), 12);
+  const key = await crypto.subtle.importKey('raw', cek, 'AES-GCM', false, ['encrypt']);
+  const body = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, key, concat(plaintext, new Uint8Array([2]))));
+  return concat(salt, new Uint8Array([0, 0, 0x10, 0]), new Uint8Array([asPub.length]), asPub, body);
+}
+
+async function readPush(env) {
+  const s = await env.DB.get(PUSH_KEY);
+  return s ? JSON.parse(s) : [];
+}
+const clip = (t, n) => (String(t).length > n ? String(t).slice(0, n - 1) + '…' : String(t));
+
+// An alle angemeldeten Geräte; tote Abos (404/410) werden entfernt.
+async function sendPush(env, events, test) {
+  const subs = await readPush(env);
+  if (!subs.length) return { devices: 0, sent: 0, failed: 0 };
+  const v = await getVapid(env);
+  const n = events.length;
+  const parts = [['new', 'neu'], ['price', 'Preis'], ['stock', 'wieder verfügbar']].map(([k, l]) => [events.filter((e) => e.k === k).length, l]).filter(([c]) => c);
+  const e0 = events[0];
+  const title = (test ? 'Test: ' : '') + (n === 1 ? KIND_LABEL[e0.k] + ' · ' + e0.s : n + ' News: ' + parts.map(([c, l]) => c + ' ' + l).join(', '));
+  const bodyText = events.slice(0, 3).map((e) => clip(e.t, 60) + ' – ' + describe(e)).join('\n') + (n > 3 ? '\n+' + (n - 3) + ' weitere' : '');
+  const payload = te.encode(JSON.stringify({ t: clip(title, 80), b: clip(bodyText, 220) }));
+  let sent = 0, failed = 0;
+  const dead = new Set();
+  await Promise.all(subs.slice(0, MAX_PUSH_DEVICES).map(async (sub) => {
+    try {
+      const res = await fetch(sub.endpoint, {
+        method: 'POST',
+        headers: { Authorization: await vapidHeader(sub.endpoint, v), 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', TTL: '86400', Urgency: 'normal' },
+        body: await encryptPush(sub, payload),
+      });
+      if (res.ok) sent++;
+      else { failed++; if (res.status === 404 || res.status === 410) dead.add(sub.endpoint); }
+    } catch (e) { failed++; }
+  }));
+  if (dead.size) await env.DB.put(PUSH_KEY, JSON.stringify(subs.filter((x) => !dead.has(x.endpoint))));
+  return { devices: subs.length, sent, failed };
+}
+
 // ---- Vergleich: neu / Preis / wieder verfügbar ----
 function diff(src, list, prev, init, now) {
   const next = Object.assign({}, prev);
@@ -523,6 +606,8 @@ async function runWatch(env) {
   if (events.length && mailOn) {
     try { await sendMail(env, events, false); state.lastMail = now; } catch (e) { mailErr = e.message; }
   }
+  // Push nur, wenn die Mail nicht neu versucht werden muss (sonst käme er im nächsten Lauf doppelt).
+  if (events.length && !mailErr) { try { await sendPush(env, events, false); } catch (e) { /* Push ist Zusatz */ } }
   // Schlug die Mail fehl, bleibt der alte Schnappschuss der betroffenen Quellen -> nächster Lauf versucht es erneut.
   for (const [id, next, st, n] of commits) {
     if (mailErr && n) { st.lastError = 'Mail fehlgeschlagen, neuer Versuch folgt'; state.src[id] = st; continue; }
@@ -543,11 +628,12 @@ async function handleNews(request, env, url, tokenHash) {
   if (!rec) return text('kein Vault angelegt', 409);
   if (rec.tokenHash !== tokenHash) return text('forbidden', 403);
 
+  const pushN = (await readPush(env)).length;
   const view = (cfg, st) => json({
     sources: cfg.sources.map((s) => Object.assign({}, s, { st: st.src[s.id] || null })),
     events: (st.events || []).slice(0, 300),
     lastRun: st.lastRun || null, lastError: st.lastError || null, lastMail: st.lastMail || null,
-    mail: !!env.RESEND_API_KEY && !!env.NEWS_TO,
+    mail: !!env.RESEND_API_KEY && !!env.NEWS_TO, push: pushN,
   });
   const path = url.pathname, m = request.method;
 
@@ -562,6 +648,36 @@ async function handleNews(request, env, url, tokenHash) {
       const r = await sendMail(env, evs, true);
       if (r.skipped) return json({ error: 'Mail nicht eingerichtet (RESEND_API_KEY / NEWS_TO fehlt)' }, 400);
       return json({ ok: true, sent: r.sent });
+    } catch (e) { return json({ error: e.message }, 502); }
+  }
+
+  if (path === '/news/push/key' && m === 'GET') return json({ key: (await getVapid(env)).pub });
+  if (path === '/news/push' && m === 'POST') {
+    let body;
+    try { body = await request.json(); } catch (e) { return text('bad json', 400); }
+    const sub = body && body.sub;
+    if (!sub || typeof sub.endpoint !== 'string' || !PUSH_HOSTS.test(sub.endpoint) || !sub.keys || !sub.keys.p256dh || !sub.keys.auth)
+      return json({ error: 'ungültiges Push-Abo' }, 400);
+    const subs = (await readPush(env)).filter((x) => x.endpoint !== sub.endpoint);
+    subs.unshift({ endpoint: sub.endpoint, keys: { p256dh: String(sub.keys.p256dh), auth: String(sub.keys.auth) }, at: new Date().toISOString() });
+    await env.DB.put(PUSH_KEY, JSON.stringify(subs.slice(0, MAX_PUSH_DEVICES)));
+    return json({ ok: true, devices: Math.min(subs.length, MAX_PUSH_DEVICES) });
+  }
+  if (path === '/news/push/remove' && m === 'POST') {
+    let body;
+    try { body = await request.json(); } catch (e) { return text('bad json', 400); }
+    const subs = (await readPush(env)).filter((x) => x.endpoint !== (body && body.endpoint));
+    await env.DB.put(PUSH_KEY, JSON.stringify(subs));
+    return json({ ok: true, devices: subs.length });
+  }
+  if (path === '/news/push/test' && m === 'POST') {
+    const st = await readState(env);
+    const evs = st.events.length ? st.events.slice(0, 2)
+      : [{ k: 'new', s: 'Testshop', t: 'Beispiel-Produkt (Test-Push)', p: 19.9, a: 1, u: '' }];
+    try {
+      const r = await sendPush(env, evs, true);
+      if (!r.devices) return json({ error: 'Kein Gerät für Push angemeldet' }, 400);
+      return json(r);
     } catch (e) { return json({ error: e.message }, 502); }
   }
 

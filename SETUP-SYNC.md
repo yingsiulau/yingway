@@ -159,6 +159,32 @@ alle paar Minuten, ehrlicher User-Agent, nur öffentliche Produkt-Feeds.
 
 ---
 
+## Als App installieren + Push-Benachrichtigungen (PWA)
+
+Die Seite ist eine installierbare App (Manifest + Icons). Mit **Push** erscheint
+eine Meldung auf dem Handy/Computer, sobald News anfallen; ein Tipp darauf öffnet
+die App direkt auf der **News**-Seite (nach dem Entsperren mit der Passphrase –
+die Daten bleiben Ende-zu-Ende verschlüsselt, in der Push-Nachricht stehen nur
+Produktname und Preis).
+
+Nach `wrangler deploy` (neuer Worker) und dem Seiten-Deploy, pro Gerät einmalig:
+
+- **Android (Chrome):** Seite öffnen → Menü → *App installieren* (optional) →
+  **News → Push aktivieren** → erlauben.
+- **iPhone/iPad (ab iOS 16.4):** In **Safari** öffnen → Teilen →
+  **Zum Home-Bildschirm** → die App **vom Home-Bildschirm** öffnen (nicht aus
+  Safari!) → **News → Push aktivieren** → erlauben. In einem normalen Safari-Tab
+  gibt es auf iOS keine Push-Meldungen.
+- **Mac/PC (Chrome, Edge, Firefox):** Seite öffnen → **News → Push aktivieren**.
+
+Mit **Test-Push** prüfst du, ob es ankommt. Jedes Gerät meldet sich einzeln an
+(bis 8 Geräte); „Push aus“ meldet das aktuelle Gerät wieder ab. Die Schlüssel
+(VAPID) erzeugt der Worker selbst beim ersten Mal, es ist kein Secret nötig.
+Die Mail läuft parallel weiter – wer nur Push möchte, kann das Secret
+`NEWS_TO` mit `wrangler secret delete NEWS_TO` entfernen.
+
+---
+
 ## Sicherheit & Grenzen
 
 - **Ende-zu-Ende verschlüsselt**: der Worker speichert nur AES-256-GCM-Chiffretext.
