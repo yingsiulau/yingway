@@ -264,6 +264,10 @@ thead th:first-child,thead th:last-child{z-index:4}
   text-decoration:underline}
 .fghint{font-size:11px;color:var(--faint);line-height:1.5;margin:0}
 .chk{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-soft)}
+.frwrap{display:flex;flex-wrap:wrap;gap:6px}
+.frchip{border:1px solid var(--line);background:var(--surface);color:var(--ink-soft);border-radius:999px;padding:4px 11px;font-size:12.5px}
+.frchip:hover{border-color:var(--gold-soft)}
+.frchip.on{background:var(--gold-bg);border-color:var(--gold-soft);color:var(--gold);font-weight:600}
 .chk input{width:auto}
 .fg-chk{margin-top:7px}
 .pdfdrop{display:flex;align-items:center;gap:8px;justify-content:center;padding:13px;
@@ -413,10 +417,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20261029a"></script>
-<script src="seed.enc.js?b=20261029a"></script>
+<script src="sync.config.js?b=20261029b"></script>
+<script src="seed.enc.js?b=20261029b"></script>
 <script>
-const BUILD='2026-10-29a';
+const BUILD='2026-10-29b';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -1169,8 +1173,8 @@ function viewLager(){
 }
 
 /* ---------- News (Shop-Monitor, läuft im Worker) ---------- */
-const news={data:null,loading:false,err:'',fr:'',kind:'',src:'',q:'',showSrc:false,showWatch:false,urls:'',filter:true,msgs:[],auto:false,chat:[],wurls:'',wbusy:false};
-const NEWS_FR=['Pokémon','One Piece','Dragon Ball'];
+const news={data:null,loading:false,err:'',fr:'',kind:'',src:'',q:'',showSrc:false,showWatch:false,urls:'',addFr:['Pokémon','One Piece','Dragon Ball'],fedit:null,cfName:'',cfKw:'',msgs:[],auto:false,chat:[],wurls:'',wbusy:false};
+const newsCatalog=()=>(news.data&&news.data.catalog)||['Pokémon','One Piece','Dragon Ball'];
 const NEWS_KIND={new:'Neu',price:'Preis',stock:'Wieder verfügbar'};
 // Ereignisse der letzten 24 h
 const newsFresh=()=>((news.data&&news.data.events)||[]).filter(e=>Date.now()-Date.parse(e.at)<864e5);
@@ -1203,7 +1207,7 @@ async function addSources(){
   news.loading=true; news.msgs=[]; draw();
   try{
     for(let i=0;i<urls.length;i+=8){
-      const j=await newsCall('/sources','POST',{urls:urls.slice(i,i+8),filter:news.filter});
+      const j=await newsCall('/sources','POST',{urls:urls.slice(i,i+8),fr:news.addFr});
       news.msgs.push(...j.results);
     }
     news.urls=news.msgs.filter(m=>!m.ok&&m.error!=='schon vorhanden').map(m=>m.url).join('\n');
@@ -1240,7 +1244,7 @@ async function toggleWatch(ci,ii,on){
 }
 async function watchWhole(ci){
   try{
-    const j=await newsCall('/sources','POST',{urls:[news.chat[ci].j.source.url],filter:true});
+    const j=await newsCall('/sources','POST',{urls:[news.chat[ci].j.source.url],fr:news.addFr});
     const r=j.results[0]; toast(r.ok?`„${r.name}“ wird jetzt überwacht`:r.error);
     await loadNews('/check','POST');
   }catch(e){ toast(e.message||'Fehler'); }
@@ -1319,6 +1323,9 @@ if('serviceWorker' in navigator&&(location.protocol==='https:'||location.hostnam
     if(e.data&&e.data.go==='news'){ try{ history.replaceState(null,'','#news'); }catch(_){} if(session&&$('#lock').hidden) go('news'); }
   });
 }
+const frChips=(sel,attr)=>newsCatalog().map(n=>`<button type="button" class="frchip ${sel.includes(n)?'on':''}" ${attr}="${esc(n)}">${esc(n)}</button>`).join('');
+async function saveSourceFr(id,fr){ await loadNews('/sources/'+id,'PUT',{fr}); }
+async function saveCustom(list){ await loadNews('/franchises','PUT',{custom:list}); }
 function viewNews(){
   if(!NEWS_BASE) return `<div class="phead"><div><h1>News</h1></div></div>
     <div class="empty">Die News brauchen die Cloud-Synchronisation (Worker). Siehe SETUP-SYNC.md.</div>`;
@@ -1340,7 +1347,7 @@ function viewNews(){
     :(e.p==null?'<span class="count">folgt</span>':CHF(e.p));
   return `
   <div class="phead">
-    <div><h1>News</h1><p>Neuerscheinungen, Preisänderungen und Wieder-verfügbar-Meldungen · Pokémon, One Piece, Dragon Ball</p></div>
+    <div><h1>News</h1><p>Neuerscheinungen, Preisänderungen und Wieder-verfügbar-Meldungen deiner Franchises</p></div>
     <div class="toolbar" style="margin:0">
       <button class="btn ghost sm" id="nCheck" ${news.loading?'disabled':''}><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2.3 5.7M20 4v7h-7"/></svg>${news.loading?'Prüfe…':'Jetzt prüfen'}</button>
       ${news.ps.supported&&!news.ps.sub?`<button class="btn ghost sm" id="nPushOn"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/></svg>Push aktivieren</button>`:''}
@@ -1377,29 +1384,39 @@ function viewNews(){
     <div class="cap">Shops, die geprüft werden. Unterstützt: <b>Shopify</b>- und <b>WooCommerce</b>-Shops (am besten die Kategorie-/Kollektions-URL, z. B. <span class="mono">https://cardtreasure.ch/collections/…</span>) und wog.ch. Pro Quelle wird bei Neuem, Preisänderung und „wieder verfügbar“ gemeldet.</div>
     <textarea id="nUrls" rows="4" placeholder="Eine Shop-URL pro Zeile …" style="width:100%;background:var(--surface);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px">${esc(news.urls)}</textarea>
     <div class="toolbar" style="margin:8px 0 0">
-      <label class="chk"><input type="checkbox" id="nFilter" ${news.filter?'checked':''}>Nur Pokémon / One Piece / Dragon Ball melden</label>
       <button class="btn sm" id="nAdd" ${news.loading?'disabled':''}>Hinzufügen</button>
+    </div>
+    <div style="margin-top:10px"><div class="cap" style="margin-bottom:6px">Melden bei diesen Franchises (nichts angehakt = <b>alle</b> Produkte der Quelle):</div>
+      <div class="frwrap">${frChips(news.addFr,'data-fa')}</div></div>
+    <div class="toolbar" style="margin:10px 0 0">
+      <input type="text" id="cfName" placeholder="Eigenes Franchise, z. B. Marvel" value="${esc(news.cfName)}" style="width:210px">
+      <input type="text" id="cfKw" placeholder="Stichwörter, mit Komma (optional)" value="${esc(news.cfKw)}" style="width:230px">
+      <button class="btn ghost sm" id="cfAdd">Franchise hinzufügen</button>
+      ${(d.custom||[]).map(c=>`<span class="chip">${esc(c.name)} <a href="#" data-cfdel="${esc(c.name)}" title="entfernen" style="color:var(--muted);text-decoration:none">×</a></span>`).join('')}
     </div>
     ${news.msgs.length?`<div style="margin-top:10px;font-size:12.5px">${news.msgs.map(m=>m.ok
       ?`<div class="pos">✓ ${esc(m.name)} (${esc(m.type)}) hinzugefügt</div>`
       :`<div class="neg">✗ ${esc(m.url)} – ${esc(m.error)}</div>`).join('')}</div>`:''}
     ${S.length?`<div class="tbl-wrap" style="margin-top:14px"><table>
-      <thead><tr><th>Quelle</th><th>Typ</th><th>Filter</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Quelle</th><th>Typ</th><th>Franchises</th><th>Status</th><th></th></tr></thead>
       <tbody>${S.map(s=>`<tr>
         <td><a href="${esc(s.url)}" target="_blank" rel="noopener" style="color:var(--ink);font-weight:500;text-decoration:none">${esc(s.name)}</a></td>
         <td><span class="chip">${esc(s.type)}</span></td>
-        <td><input type="checkbox" data-sf="${esc(s.id)}" ${s.filter?'checked':''} title="nur Pokémon / One Piece / Dragon Ball"></td>
+        <td class="cell-wrap">${s.fr.length?s.fr.map(n=>`<span class="chip">${esc(n)}</span>`).join(' '):'<span class="count">alle Produkte</span>'}
+          <button class="btn ghost sm" data-fedit="${esc(s.id)}" style="margin-left:4px">${news.fedit===s.id?'fertig':'ändern'}</button></td>
         <td class="cell-wrap">${srcStatus(s)}</td>
         <td><button class="btn ghost sm" data-soff="${esc(s.id)}">${s.off?'Fortsetzen':'Pausieren'}</button>
             <button class="btn ghost sm" data-sdel="${esc(s.id)}">Löschen</button></td>
-      </tr>`).join('')}</tbody></table></div>`:''}
+      </tr>${news.fedit===s.id?`<tr><td colspan="5" style="background:var(--surface-2);white-space:normal">
+        <div class="cap" style="margin-bottom:6px">Bei <b>${esc(s.name)}</b> melden für (nichts angehakt = alle Produkte; eine Änderung liest die Quelle still neu ein, ohne Meldungs-Flut):</div>
+        <div class="frwrap">${frChips(s.fr,'data-fs')}</div></td></tr>`:''}`).join('')}</tbody></table></div>`:''}
   </div>`:''}
   <div class="toolbar">
     <div class="field"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
       <input type="search" id="nQ" placeholder="Produkt suchen…" value="${esc(news.q)}"></div>
     <select id="nKind"><option value="">Alle Ereignisse</option>${Object.entries(NEWS_KIND).map(([k,l])=>`<option value="${k}" ${news.kind===k?'selected':''}>${l}</option>`).join('')}</select>
     <select id="nSrc"><option value="">Alle Quellen</option>${[...new Set(ALL.map(s=>s.shop||s.name))].map(n=>`<option ${news.src===n?'selected':''}>${esc(n)}</option>`).join('')}</select>
-    <select id="nFr"><option value="">Alle Franchises</option>${NEWS_FR.map(k=>`<option ${news.fr===k?'selected':''}>${k}</option>`).join('')}</select>
+    <select id="nFr"><option value="">Alle Franchises</option>${newsCatalog().map(k=>`<option ${news.fr===k?'selected':''}>${esc(k)}</option>`).join('')}</select>
     <span class="count" style="margin-left:auto">${status}</span>
   </div>
   ${d?`<div class="tbl-wrap"><table>
@@ -1433,10 +1450,20 @@ function wireNews(){
   $$('[data-ww]').forEach(b=>b.onclick=()=>watchWhole(Number(b.dataset.ww)));
   $$('[data-wdel]').forEach(b=>b.onclick=()=>loadNews('/sources/'+b.dataset.wdel,'DELETE'));
   const u=$('#nUrls'); if(u)u.oninput=()=>{news.urls=u.value;};
-  const nf=$('#nFilter'); if(nf)nf.onchange=()=>{news.filter=nf.checked;};
+  $$('[data-fa]').forEach(b=>b.onclick=()=>{ const n=b.dataset.fa; news.addFr=news.addFr.includes(n)?news.addFr.filter(x=>x!==n):[...news.addFr,n]; const u=$('#nUrls'); if(u)news.urls=u.value; draw(); });
+  $$('[data-fs]').forEach(b=>b.onclick=()=>{ const s=news.data.sources.find(x=>x.id===news.fedit); const n=b.dataset.fs; saveSourceFr(s.id,s.fr.includes(n)?s.fr.filter(x=>x!==n):[...s.fr,n]); });
+  $$('[data-fedit]').forEach(b=>b.onclick=()=>{ news.fedit=news.fedit===b.dataset.fedit?null:b.dataset.fedit; draw(); });
+  const cn=$('#cfName'); if(cn)cn.oninput=()=>{news.cfName=cn.value;};
+  const ck=$('#cfKw'); if(ck)ck.oninput=()=>{news.cfKw=ck.value;};
+  const ca=$('#cfAdd'); if(ca)ca.onclick=async()=>{
+    const name=news.cfName.trim(); if(!name) return;
+    const kw=news.cfKw.split(',').map(x=>x.trim()).filter(Boolean);
+    await saveCustom([...((news.data&&news.data.custom)||[]),{name,kw}]);
+    if(!(news.data.catalog||[]).includes(name)) toast('Name schon vergeben'); else { news.cfName=news.cfKw=''; draw(); } };
+  $$('[data-cfdel]').forEach(a=>a.onclick=e=>{ e.preventDefault(); const n=a.dataset.cfdel;
+    if(confirm(`Franchise „${n}“ entfernen? Quellen, die nur dieses wählen, werden pausiert.`)) saveCustom(news.data.custom.filter(c=>c.name!==n)); });
   const ad=$('#nAdd'); if(ad)ad.onclick=addSources;
   $$('[data-soff]').forEach(b=>b.onclick=()=>{ const s=news.data.sources.find(x=>x.id===b.dataset.soff); loadNews('/sources/'+s.id,'PUT',{off:!s.off}); });
-  $$('[data-sf]').forEach(b=>b.onchange=()=>loadNews('/sources/'+b.dataset.sf,'PUT',{filter:b.checked}));
   $$('[data-sdel]').forEach(b=>b.onclick=()=>{ const s=news.data.sources.find(x=>x.id===b.dataset.sdel); if(confirm(`„${s.name}“ nicht mehr prüfen?`)) loadNews('/sources/'+s.id,'DELETE'); });
   const q=$('#nQ'); if(q)q.oninput=debounce(()=>{news.q=q.value;draw();
     const el=$('#nQ'); if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}},200);

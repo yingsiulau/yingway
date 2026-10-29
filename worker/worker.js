@@ -141,14 +141,30 @@ async function handleFiles(request, env, url, tokenHash) {
 
 const esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const chf = (v) => (v == null ? 'Preis folgt' : 'CHF ' + Number(v).toFixed(2));
-const FRANCHISES = [['Pokémon', /pok[eé]mon/i], ['One Piece', /one[\s\-_]*piece/i], ['Dragon Ball', /dragon[\s\-_]*ball/i]];
-const franchiseOf = (hay) => (FRANCHISES.find(([, re]) => re.test(hay)) || [''])[0];
+// Franchise-Katalog: eingebaute + eigene (cfg.customFr = [{ name, kw: [Stichwörter] }]).
+// Pro Quelle wählt man, welche gemeldet werden (src.fr); leer = alle Produkte.
+const BUILTIN_FR = [
+  ['Pokémon', /pok[eé]mon/i], ['One Piece', /one[\s\-_]*piece/i], ['Dragon Ball', /dragon[\s\-_]*ball/i],
+  ['Riftbound', /riftbound/i], ['Naruto', /naruto/i], ['Cyberpunk', /cyberpunk/i],
+  ['Magic', /\bmagic\b|\bmtg\b/i], ['Yu-Gi-Oh!', /yu[\s\-_]*gi[\s\-_]*oh/i], ['Lorcana', /lorcana/i], ['Digimon', /digimon/i],
+  ['Star Wars', /star[\s\-_]*wars/i], ['Flesh and Blood', /flesh[\s\-_]*(and|&)[\s\-_]*blood/i], ['Gundam', /gundam/i], ['Union Arena', /union[\s\-_]*arena/i],
+];
+const DEFAULT_FR = ['Pokémon', 'One Piece', 'Dragon Ball'];
+const kwRegex = (kw) => new RegExp(kw.map((k) => String(k).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '[\\s\\-_]*')).filter(Boolean).join('|') || '$^', 'i');
+let CATALOG = BUILTIN_FR.slice();
+const setCatalog = (cfg) => { CATALOG = BUILTIN_FR.concat((cfg.customFr || []).map((c) => [c.name, kwRegex(c.kw)])); };
+const franchiseOf = (hay) => (CATALOG.find(([, re]) => re.test(hay)) || [''])[0];
+const srcFr = (s) => (Array.isArray(s.fr) ? s.fr : s.filter === false ? [] : DEFAULT_FR);
+const passes = (src, hay) => { const fr = srcFr(src); return !fr.length || CATALOG.some(([n, re]) => fr.includes(n) && re.test(hay)); };
+const resetSource = (st, id) => { if (st.src[id]) delete st.src[id].init; delete st.snap[id]; }; // stilles Neu-Einlesen
 
-const DEFAULT_SOURCES = [{ id: 'wog', name: 'World of Games', url: 'https://www.wog.ch/de/index.cfm/lastAdded/platform/Trading-Cards', type: 'wog', filter: true }];
+const DEFAULT_SOURCES = [{ id: 'wog', name: 'World of Games', url: 'https://www.wog.ch/de/index.cfm/lastAdded/platform/Trading-Cards', type: 'wog', fr: DEFAULT_FR.slice() }];
 
 async function readCfg(env) {
   const s = await env.DB.get(CFG_KEY);
-  return s ? JSON.parse(s) : { sources: DEFAULT_SOURCES.slice() };
+  const cfg = s ? JSON.parse(s) : { sources: DEFAULT_SOURCES.slice() };
+  setCatalog(cfg);
+  return cfg;
 }
 async function readState(env) {
   const s = await env.DB.get(STATE_KEY);
@@ -185,7 +201,7 @@ async function fetchShopify(src) {
       const prices = (p.variants || []).map((v) => parseFloat(v.price)).filter((x) => x >= 0);
       const tagStr = Array.isArray(p.tags) ? p.tags.join(' ') : String(p.tags || '');
       const hay = [p.title, p.product_type, p.vendor, tagStr].join(' ');
-      if (src.filter && !FRANCHISES.some(([, re]) => re.test(hay))) continue;
+      if (!passes(src, hay)) continue;
       out.push({
         id: String(p.id), t: p.title,
         p: prices.length ? Math.min(...prices) : null,
@@ -214,7 +230,7 @@ async function fetchWog(src) {
   });
   if (!Array.isArray(data.products)) throw new Error('wog.ch: unerwartetes Antwortformat');
   const list = data.products
-    .filter((p) => !src.filter || FRANCHISES.some(([, re]) => re.test(p.title || p.fullTitle || '')))
+    .filter((p) => passes(src, p.title || p.fullTitle || ''))
     .map((p) => ({
       id: String(p.productID), t: p.fullTitle || p.title,
       p: p.unitPrice > 0 ? p.unitPrice : null,
@@ -265,7 +281,7 @@ async function fetchWoo(src) {
     if (!Array.isArray(data)) throw new Error(new URL(src.url).host + ': kein WooCommerce-Shop');
     for (const p of data) {
       const it = wooNorm(p);
-      if (src.filter && !FRANCHISES.some(([, re]) => re.test(it.hay))) continue;
+      if (!passes(src, it.hay)) continue;
       delete it.hay; out.push(it);
     }
     if (data.length < 100) break;
@@ -383,7 +399,7 @@ async function probeLink(raw) {
       const x = wogItemFromHtml(html, u.origin + u.pathname);
       return { kind: 'product', shop: 'World of Games', items: tag([x], 'wog', 'World of Games', { pid: x.pid }) };
     }
-    const { list } = await fetchWog({ filter: false });
+    const { list } = await fetchWog({ fr: [] });
     return { kind: 'collection', shop: 'World of Games', source: { url: raw }, items: list.slice(0, 12).map((x) => ({ type: 'wog', shop: 'World of Games', title: x.t, price: x.p, a: x.a, img: x.i, url: x.u, item: { pid: x.id, url: x.u } })) };
   }
 
@@ -545,7 +561,7 @@ async function sendMail(env, events, test) {
   const parts = [['new', 'neu'], ['price', 'Preis'], ['stock', 'wieder verfügbar']].filter(([k]) => count(k)).map(([k, l]) => count(k) + ' ' + l);
   const html = '<div style="font-family:-apple-system,Segoe UI,sans-serif;max-width:580px">' +
     '<h2 style="margin:0 0 4px">' + (test ? 'Testmail – ' : '') + esc(parts.join(' · ')) + '</h2>' +
-    '<p style="color:#777;margin:0 0 12px;font-size:13px">Pokémon / One Piece / Dragon Ball</p>' +
+    '<p style="color:#777;margin:0 0 12px;font-size:13px">Yingway News</p>' +
     '<table style="border-collapse:collapse;width:100%">' + shown.map(row).join('') + '</table>' +
     (more > 0 ? '<p style="color:#777">… und ' + more + ' weitere in der App unter News.</p>' : '') + '</div>';
   const textBody = shown.map((ev) => '[' + KIND_LABEL[ev.k] + ' · ' + ev.s + '] ' + ev.t + '\n' + describe(ev) + '\n' + ev.u).join('\n\n');
@@ -630,7 +646,8 @@ async function handleNews(request, env, url, tokenHash) {
 
   const pushN = (await readPush(env)).length;
   const view = (cfg, st) => json({
-    sources: cfg.sources.map((s) => Object.assign({}, s, { st: st.src[s.id] || null })),
+    sources: cfg.sources.map((s) => Object.assign({}, s, { fr: srcFr(s), st: st.src[s.id] || null })),
+    catalog: CATALOG.map((c) => c[0]), custom: cfg.customFr || [],
     events: (st.events || []).slice(0, 300),
     lastRun: st.lastRun || null, lastError: st.lastError || null, lastMail: st.lastMail || null,
     mail: !!env.RESEND_API_KEY && !!env.NEWS_TO, push: pushN,
@@ -682,6 +699,7 @@ async function handleNews(request, env, url, tokenHash) {
   }
 
   if (path === '/news/watch/probe' && m === 'POST') {
+    await readCfg(env); // Katalog laden
     let body;
     try { body = await request.json(); } catch (e) { return text('bad json', 400); }
     try { return json(await probeLink(String(body.url || '').trim())); }
@@ -704,7 +722,7 @@ async function handleNews(request, env, url, tokenHash) {
         const pu = new URL(String(x.url));
         if (!/^https?:$/.test(pu.protocol)) throw new Error('keine gültige URL');
         if (cfg.sources.length >= MAX_SOURCES) throw new Error('maximal ' + MAX_SOURCES + ' Quellen');
-        const src = { id: crypto.randomUUID().slice(0, 8), name: String(x.title || '').slice(0, 120), shop: String(x.shop || pu.hostname).slice(0, 60), url: pu.origin + (x.type === 'wog' ? pu.pathname : ''), type: x.type, filter: false, item: ref, img: String(x.img || '').slice(0, 300) };
+        const src = { id: crypto.randomUUID().slice(0, 8), name: String(x.title || '').slice(0, 120), shop: String(x.shop || pu.hostname).slice(0, 60), url: pu.origin + (x.type === 'wog' ? pu.pathname : ''), type: x.type, fr: [], item: ref, img: String(x.img || '').slice(0, 300) };
         if (cfg.sources.some((s) => srcKey(s) === srcKey(src))) throw new Error('schon vorhanden');
         cfg.sources.push(src);
         // Stand von der Prüfung übernehmen -> erste Änderung wird schon erkannt
@@ -717,6 +735,39 @@ async function handleNews(request, env, url, tokenHash) {
     await env.DB.put(CFG_KEY, JSON.stringify(cfg));
     await env.DB.put(STATE_KEY, JSON.stringify(st));
     return json({ results: out });
+  }
+
+  // Eigene Franchises: Name + Stichwörter (Titel/Typ/Hersteller des Produkts werden danach durchsucht)
+  if (path === '/news/franchises' && m === 'PUT') {
+    let body;
+    try { body = await request.json(); } catch (e) { return text('bad json', 400); }
+    const cfg = await readCfg(env);
+    const builtin = BUILTIN_FR.map((c) => c[0].toLowerCase());
+    const seen = new Set(builtin), custom = [];
+    for (const c of (Array.isArray(body.custom) ? body.custom : []).slice(0, 20)) {
+      const name = String((c && c.name) || '').trim().slice(0, 40);
+      const kw = (Array.isArray(c && c.kw) ? c.kw : []).map((k) => String(k).trim().slice(0, 40)).filter(Boolean).slice(0, 8);
+      if (!name || seen.has(name.toLowerCase())) continue;
+      seen.add(name.toLowerCase()); custom.push({ name, kw: kw.length ? kw : [name] });
+    }
+    // Entfernte eigene Franchises aus den Quellen streichen (und diese still neu einlesen)
+    const alive = new Set(custom.map((c) => c.name)), st = await readState(env);
+    const removed = (cfg.customFr || []).map((c) => c.name).filter((n) => !alive.has(n));
+    for (const src of cfg.sources) {
+      const fr = srcFr(src);
+      if (fr.some((n) => removed.includes(n))) {
+        src.fr = fr.filter((n) => !removed.includes(n)); delete src.filter; resetSource(st, src.id);
+        if (!src.fr.length) src.off = true; // sonst würde plötzlich ALLES gemeldet
+      }
+    }
+    // Stichwörter geändert -> betroffene Quellen still neu einlesen
+    for (const c of custom) {
+      const old = (cfg.customFr || []).find((o) => o.name === c.name);
+      if (old && JSON.stringify(old.kw) !== JSON.stringify(c.kw)) for (const src of cfg.sources) if (srcFr(src).includes(c.name)) resetSource(st, src.id);
+    }
+    cfg.customFr = custom; setCatalog(cfg);
+    await env.DB.put(CFG_KEY, JSON.stringify(cfg)); await env.DB.put(STATE_KEY, JSON.stringify(st));
+    return view(cfg, st);
   }
 
   if (path === '/news/sources' && m === 'POST') {
@@ -732,9 +783,12 @@ async function handleNews(request, env, url, tokenHash) {
         if (cfg.sources.some((s) => srcKey(s) === srcKey(d))) throw new Error('schon vorhanden');
         const id = d.type === 'wog' ? 'wog' : crypto.randomUUID().slice(0, 8);
         let readable = d.url; try { readable = decodeURIComponent(d.url); } catch (e) { /* roh lassen */ }
-        const filter = body.filter !== false && !FRANCHISES.some(([, re]) => re.test(readable));
-        cfg.sources.push(Object.assign({ id, name: d.name, url: d.url, type: d.type, filter }, d.cat ? { cat: d.cat } : {}));
-        results.push({ url: raw, ok: true, name: d.name, type: d.type, filter });
+        // Auswahl aus der App; ist die Kollektion schon per URL auf ein Franchise eingegrenzt (z. B. /pokemon), kein Filter.
+        const known = CATALOG.map((c) => c[0]);
+        let fr = Array.isArray(body.fr) ? body.fr.filter((n) => known.includes(n)) : DEFAULT_FR.slice();
+        if (CATALOG.some(([, re]) => re.test(readable))) fr = [];
+        cfg.sources.push(Object.assign({ id, name: d.name, url: d.url, type: d.type, fr }, d.cat ? { cat: d.cat } : {}));
+        results.push({ url: raw, ok: true, name: d.name, type: d.type, fr });
       } catch (e) { results.push({ url: raw, ok: false, error: e.message }); }
     }
     await env.DB.put(CFG_KEY, JSON.stringify(cfg));
@@ -753,7 +807,11 @@ async function handleNews(request, env, url, tokenHash) {
       const s = cfg.sources[i];
       if (typeof body.name === 'string' && body.name.trim()) s.name = body.name.trim().slice(0, 60);
       if (typeof body.off === 'boolean') s.off = body.off;
-      if (typeof body.filter === 'boolean' && body.filter !== s.filter) { s.filter = body.filter; const st = await readState(env); delete st.src[s.id].init; delete st.snap[s.id]; await env.DB.put(STATE_KEY, JSON.stringify(st)); }
+      if (Array.isArray(body.fr)) {
+        const known = CATALOG.map((c) => c[0]);
+        s.fr = body.fr.filter((n) => known.includes(n)); delete s.filter;
+        const st = await readState(env); resetSource(st, s.id); await env.DB.put(STATE_KEY, JSON.stringify(st));
+      }
     } else return text('method not allowed', 405);
     await env.DB.put(CFG_KEY, JSON.stringify(cfg));
     return view(cfg, await readState(env));

@@ -122,9 +122,16 @@ Stand – keine Mail-Flut.
   unterstützte Links werden abgelehnt. Mit dem Häkchen wird die Beobachtung
   gespeichert, gemeldet werden Preisänderungen und „wieder verfügbar“. Funktioniert
   für Shopify-, WooCommerce-Produktseiten und wog.ch.
-- **Filter-Haken:** bei Kollektionen, die ohnehin nur Pokémon enthalten (URL
-  enthält „pokemon“), schaltet die App den Filter automatisch aus, weil
-  Produkttitel dort oft das Wort nicht enthalten.
+- **Franchises pro Quelle:** Beim Hinzufügen und später per **ändern** in der
+  Quellen-Tabelle wählst du pro Shop, welche Franchises gemeldet werden
+  (Pokémon, One Piece, Dragon Ball, Riftbound, Naruto, Cyberpunk, Magic, Yu-Gi-Oh!,
+  Lorcana, Digimon, Star Wars, Flesh and Blood, Gundam, Union Arena). Nichts
+  angehakt = **alle** Produkte der Quelle. Fehlt eins, legst du unter
+  *Franchise hinzufügen* ein eigenes an (Name + optionale Stichwörter, die im
+  Produkttitel/Typ/Hersteller gesucht werden). Eine Änderung liest die Quelle
+  still neu ein – ohne Meldungs-Flut. Ist eine Kollektion schon per URL
+  eingegrenzt (z. B. `…/pokemon`), wird beim Hinzufügen automatisch nicht
+  gefiltert, weil die Titel dort das Wort oft nicht enthalten.
 - **Takt:** Cron alle 5 Min.; pro Lauf werden so viele Quellen geprüft, wie das
   Budget (40 Anfragen, ~2,5 MB) erlaubt, die am längsten ungeprüften zuerst. Bei
   ~50 Shops ist ein voller Durchgang daher nach ca. 20–40 Min. durch. Auf dem
