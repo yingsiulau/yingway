@@ -14,9 +14,13 @@ id = "5fb396d04a8b429eb0f19f21b9d94b80"
 binding = "FILES"
 bucket_name = "yingway-files"
 
-# News-Monitor: alle 5 Minuten die nächsten Shops prüfen.
+# News-Monitor: PAUSIERT (kein Cron, NEWS_PAUSED unten) – Vault-Sync und Belege laufen normal weiter.
+# Wieder einschalten: die Zeile  NEWS_PAUSED  löschen, bei  crons  "*/5 * * * *"  eintragen, wrangler deploy.
 [triggers]
-crons = ["*/5 * * * *"]
+crons = []
+
+[vars]
+NEWS_PAUSED = "1"
 
 # Mail-Empfänger und Resend-Key sind Secrets (Repo ist öffentlich):
 #   wrangler secret put NEWS_TO          (kommagetrennt, z. B. bruder@x.ch)

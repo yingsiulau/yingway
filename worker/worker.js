@@ -135,6 +135,9 @@ async function handleFiles(request, env, url, tokenHash) {
 }
 
 // ---------- News-Monitor (viele Shops) ----------
+// Pausenschalter: Variable NEWS_PAUSED = "1" (wrangler.toml) -> keine Abfragen, keine Mails, kein Push,
+// auch nicht über "Jetzt prüfen". Vault-Sync und PDF-Belege laufen unabhängig davon weiter.
+const isPaused = (env) => !!env.NEWS_PAUSED && env.NEWS_PAUSED !== '0';
 //
 // Konfiguration (Liste der Quellen) und Zustand (Schnappschüsse, Ereignisse, Status) liegen in
 // getrennten KV-Einträgen: der Cron schreibt nur den Zustand, die App nur die Konfiguration.
@@ -496,6 +499,7 @@ const clip = (t, n) => (String(t).length > n ? String(t).slice(0, n - 1) + '…'
 
 // An alle angemeldeten Geräte; tote Abos (404/410) werden entfernt.
 async function sendPush(env, events, test) {
+  if (isPaused(env)) return { devices: 0, sent: 0, failed: 0 };
   const subs = await readPush(env);
   if (!subs.length) return { devices: 0, sent: 0, failed: 0 };
   const v = await getVapid(env);
@@ -548,6 +552,7 @@ function describe(ev) {
 }
 
 async function sendMail(env, events, test) {
+  if (isPaused(env)) return { skipped: true };
   const to = (env.NEWS_TO || '').split(',').map((x) => x.trim()).filter(Boolean);
   if (!env.RESEND_API_KEY || !to.length) return { skipped: true };
   const shown = events.slice(0, 80), more = events.length - shown.length;
@@ -582,6 +587,7 @@ async function runWatch(env) {
   const now = new Date().toISOString();
   const cfg = await readCfg(env);
   const state = await readState(env);
+  if (isPaused(env)) return { cfg, state };
   const mailOn = !!env.RESEND_API_KEY && !!env.NEWS_TO;
 
   const todo = cfg.sources.filter((s) => !s.off)
@@ -650,12 +656,14 @@ async function handleNews(request, env, url, tokenHash) {
     catalog: CATALOG.map((c) => c[0]), custom: cfg.customFr || [],
     events: (st.events || []).slice(0, 300),
     lastRun: st.lastRun || null, lastError: st.lastError || null, lastMail: st.lastMail || null,
-    mail: !!env.RESEND_API_KEY && !!env.NEWS_TO, push: pushN,
+    mail: !!env.RESEND_API_KEY && !!env.NEWS_TO, push: pushN, paused: isPaused(env),
   });
   const path = url.pathname, m = request.method;
 
   if (path === '/news' && m === 'GET') return view(await readCfg(env), await readState(env));
   if (path === '/news/check' && m === 'POST') { const r = await runWatch(env); return view(r.cfg, r.state); }
+
+  if ((path === '/news/test' || path === '/news/push/test') && m === 'POST' && isPaused(env)) return json({ error: 'News sind pausiert' }, 400);
 
   if (path === '/news/test' && m === 'POST') {
     const st = await readState(env);
