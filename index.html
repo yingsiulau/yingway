@@ -417,10 +417,10 @@ img{max-width:100%}
 </div>
 <div id="toast"></div>
 
-<script src="sync.config.js?b=20261029b"></script>
-<script src="seed.enc.js?b=20261029b"></script>
+<script src="sync.config.js?b=20261031a"></script>
+<script src="seed.enc.js?b=20261031a"></script>
 <script>
-const BUILD='2026-10-29b';
+const BUILD='2026-10-31a';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const uid=()=> (crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').slice(0,12):Math.random().toString(36).slice(2,14));
 const CHF=n=>new Intl.NumberFormat('de-CH',{style:'currency',currency:'CHF',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n)||0);
@@ -1333,7 +1333,8 @@ function viewNews(){
   if(!d&&!news.err) setTimeout(()=>loadNews(),0);
   if(!news.ps.checked){ news.ps.checked=true; setTimeout(pushRefresh,0); }
   if(d&&!news.auto&&d.sources.some(s=>!s.off&&!s.st)){ news.auto=true; setTimeout(()=>loadNews('/check','POST'),0); } // noch nie geprüfte Quellen
-  const ALL=(d&&d.sources)||[];
+  // alter Worker (ohne Franchise-Auswahl): fr aus dem früheren filter-Flag ableiten
+  const ALL=((d&&d.sources)||[]).map(s=>s.fr?s:Object.assign({},s,{fr:s.filter===false?[]:['Pokémon','One Piece','Dragon Ball']}));
   const S=ALL.filter(s=>!s.item), W=ALL.filter(s=>s.item);
   const q=news.q.toLowerCase();
   const f=((d&&d.events)||[]).filter(e=>(!news.kind||e.k===news.kind)&&(!news.src||e.s===news.src)&&(!news.fr||e.g===news.fr)&&(!q||e.t.toLowerCase().includes(q)));
@@ -1361,6 +1362,7 @@ function viewNews(){
     ?'<b>Push auf dem iPhone:</b> Seite in Safari öffnen → Teilen → <b>Zum Home-Bildschirm</b>, dann die App vom Home-Bildschirm öffnen und hier „Push aktivieren“ tippen.'
     :'Dieser Browser unterstützt keine Push-Benachrichtigungen.'}</span></div>`:''}
   ${news.ps.supported&&news.ps.perm==='denied'?`<div class="banner warn"><span><b>Benachrichtigungen sind blockiert.</b> In den Geräte-/Browser-Einstellungen für diese Seite erlauben, dann hier „Push aktivieren“.</span></div>`:''}
+  ${d&&!d.catalog?`<div class="banner warn"><span><b>Worker veraltet:</b> die Franchise-Auswahl braucht den neuen Worker – bitte <span class="mono">cd worker &amp;&amp; wrangler deploy</span> ausführen.</span></div>`:''}
   ${news.err?`<div class="banner warn"><span><b>News nicht erreichbar:</b> ${esc(news.err)}</span></div>`:''}
   ${d&&d.lastError?`<div class="banner warn"><span><b>Letzter Lauf mit Fehler:</b> ${esc(d.lastError)}</span></div>`:''}
   ${d&&!d.mail?`<div class="banner"><span>Mail-Benachrichtigung ist noch nicht eingerichtet – das Dashboard funktioniert trotzdem. Anleitung: <b>SETUP-SYNC.md → News &amp; Mail</b>.</span></div>`:''}
